@@ -206,10 +206,16 @@ function getInstanceByChannel(channelId) {
 
 // Listen to messages in channels where an instance is running
 app.message(async ({ message, say }) => {
+  console.log(`[DEBUG] Received message in channel ${message.channel}: ${message.text?.substring(0, 50)}`);
+
   // Ignore bot messages and message edits
-  if (message.subtype || message.bot_id) return;
+  if (message.subtype || message.bot_id) {
+    console.log(`[DEBUG] Ignoring message (subtype: ${message.subtype}, bot_id: ${message.bot_id})`);
+    return;
+  }
 
   const found = getInstanceByChannel(message.channel);
+  console.log(`[DEBUG] Found instance: ${found ? found.instanceId : 'none'}`);
   if (found) {
     // Send typing indicator by posting a temporary message
     const thinking = await app.client.chat.postMessage({

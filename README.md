@@ -1,6 +1,8 @@
 # Claude Dispatch
 
-Control Claude Code from Slack. Start coding sessions on your desktop and interact with them from your phone.
+Control Claude Code from Slack or Microsoft Teams. Start coding sessions on your desktop and interact with them from your phone.
+
+> **New in v2.0:** Microsoft Teams support! See [TEAMS_SETUP.md](./TEAMS_SETUP.md) for Teams-specific setup.
 
 ## Quick Start (AI-Assisted Setup)
 
@@ -25,6 +27,7 @@ The agent will walk you through each step interactively, create your config file
 
 ## Architecture
 
+### Slack Mode (Socket Mode)
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Your Desktop                              │
@@ -52,6 +55,34 @@ The agent will walk you through each step interactively, create your config file
                               └─────────────────┘
 ```
 
+### Teams Mode (Bot Framework)
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Your Desktop                              │
+│                                                              │
+│  ┌──────────────┐      ┌──────────────────────────────────┐ │
+│  │ Claude Code  │◄────►│                                  │ │
+│  │ Instance 1   │      │       Claude Dispatch            │ │
+│  └──────────────┘      │           (Teams)                │ │
+│                        │                                  │ │
+│  ┌──────────────┐      │  - HTTP webhook server          │ │
+│  │ Claude Code  │◄────►│  - Adaptive Cards for UI        │ │
+│  │ Instance 2   │      │  - Routes Teams ↔ Claude        │ │
+│  └──────────────┘      └─────────────┬────────────────────┘ │
+│                                      │                      │
+└──────────────────────────────────────┼──────────────────────┘
+                                       │ HTTPS (ngrok/Azure)
+                                       ▼
+                              ┌─────────────────┐
+                              │ Azure Bot Svc   │
+                              └────────┬────────┘
+                                       │
+                                       ▼
+                              ┌─────────────────┐
+                              │ Microsoft Teams │
+                              └─────────────────┘
+```
+
 ---
 
 ## Prerequisites
@@ -60,12 +91,21 @@ Before starting, ensure you have:
 
 - [ ] Node.js 18+ installed
 - [ ] Claude Code CLI installed and authenticated (`claude --version` works)
+
+**For Slack:**
 - [ ] A Slack workspace where you can create apps
 - [ ] Admin or app-creation permissions in that workspace
 
+**For Teams:**
+- [ ] Azure subscription (free tier works)
+- [ ] Microsoft 365 account with Teams access
+- [ ] See [TEAMS_SETUP.md](./TEAMS_SETUP.md) for full Teams requirements
+
 ---
 
-## Setup Instructions
+## Setup Instructions (Slack)
+
+> **Using Teams instead?** See [TEAMS_SETUP.md](./TEAMS_SETUP.md) for Microsoft Teams setup.
 
 ### Step 1: Install Dependencies
 
@@ -271,6 +311,29 @@ Each message spawns a new Claude process and resumes the session. This takes 2-5
 4. Claude's response is parsed from stdout (stream-json format)
 5. Only text responses are forwarded to Slack (tool calls are filtered)
 6. Session persistence means Claude remembers the conversation
+
+---
+
+## Running Teams Bot
+
+For Microsoft Teams, use the Teams-specific entry point:
+
+```bash
+# Install dependencies (includes Teams SDK)
+npm install
+
+# Start Teams bot
+npm run start:teams
+```
+
+You'll also need ngrok for local development:
+```bash
+ngrok http 3978
+```
+
+Then update your Azure Bot messaging endpoint with the ngrok URL.
+
+See [TEAMS_SETUP.md](./TEAMS_SETUP.md) for complete Teams setup instructions.
 
 ---
 
