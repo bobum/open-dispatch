@@ -174,9 +174,17 @@ Waiting for Slack commands...
 
 ## Usage
 
+### Set Up a Channel
+
+1. Create or choose a Slack channel for your project (e.g., `#claude-myproject`)
+2. Invite the bot to the channel:
+   ```
+   /invite @Claude Dispatch
+   ```
+
 ### Start an Instance
 
-In any Slack channel:
+In the channel where you invited the bot:
 ```
 /claude-start myproject C:\path\to\project
 ```
