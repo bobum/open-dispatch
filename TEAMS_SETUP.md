@@ -1,240 +1,193 @@
 # Microsoft Teams Setup Guide for Claude Dispatch
 
-This guide walks you through setting up Claude Dispatch to work with Microsoft Teams instead of Slack.
+This guide walks you through setting up Claude Dispatch to work with Microsoft Teams using the **Teams Developer Portal** (dev.teams.microsoft.com) instead of the Azure Portal.
 
 ## Overview
 
-Claude Dispatch for Teams allows you to control Claude Code instances directly from Microsoft Teams channels. The bot uses the Microsoft Bot Framework with Azure Bot Service for communication.
+Claude Dispatch for Teams allows you to control Claude Code or OpenCode instances directly from Microsoft Teams channels. This guide uses the Teams Developer Portal for a streamlined setup experience.
 
 ## Prerequisites
 
 - Node.js 18+ installed
-- Azure subscription (free tier works for development)
 - Microsoft 365 account with Teams access
-- Admin access to your Microsoft 365 tenant (or ability to request app approval)
-- Claude Code CLI installed and authenticated on the machine running the bot
+- Access to Teams Developer Portal (dev.teams.microsoft.com)
+- Claude Code CLI or OpenCode CLI installed and authenticated on the machine running the bot
+
+> **Note**: No Azure subscription required for basic setup! The Teams Developer Portal handles bot registration.
 
 ## Architecture
 
 ```
-Teams User → Microsoft Teams → Azure Bot Service → Your Bot Server → Claude CLI
-                                      ↓
-                              Bot Framework SDK
+Teams User → Microsoft Teams → Bot Framework Service → Your Bot Server → Claude/OpenCode CLI
+                                       ↓
+                               Bot Framework SDK
 ```
 
-## Step 1: Create Azure Bot Resource
+---
 
-### Option A: Azure Portal (Recommended for Production)
+## Step 1: Create Bot in Teams Developer Portal
 
-1. Go to [Azure Portal](https://portal.azure.com)
-2. Click **Create a resource** → Search for **Azure Bot**
-3. Click **Create** and fill in:
-   - **Bot handle**: `claude-dispatch` (must be unique)
-   - **Subscription**: Select your subscription
-   - **Resource group**: Create new or select existing
-   - **Pricing tier**: F0 (Free) for development
-   - **Microsoft App ID**: Select **Create new Microsoft App ID**
-4. Click **Review + create** → **Create**
-5. Once created, go to the resource
+1. Go to [Teams Developer Portal](https://dev.teams.microsoft.com)
+2. Sign in with your Microsoft 365 credentials
+3. In the left sidebar, click **Tools** → **Bot management**
+4. Click **+ New Bot**
+5. Enter a name for your bot (e.g., `claude-dispatch-bot`)
+6. Click **Add**
 
-### Option B: Bot Framework Portal (Quick Start)
+### Save Your Credentials
 
-1. Go to [Bot Framework Portal](https://dev.botframework.com/)
-2. Click **Create a bot** → **Create**
-3. Follow the wizard to create your bot
+After creating the bot:
+1. **Copy the Bot ID** - This is your `MICROSOFT_APP_ID`
+2. Click on your bot name to open settings
+3. Under **Client secrets**, click **Add a client secret**
+4. **Copy the secret value immediately** - This is your `MICROSOFT_APP_PASSWORD`
 
-## Step 2: Get Bot Credentials
+> **Important**: Save these credentials securely. The secret won't be shown again.
 
-1. In your Azure Bot resource, go to **Configuration**
-2. Note the **Microsoft App ID** (you'll need this)
-3. Click **Manage** next to Microsoft App ID
-4. In the App Registration page:
-   - Go to **Certificates & secrets**
-   - Click **New client secret**
-   - Add description: `claude-dispatch-secret`
-   - Select expiration (24 months recommended)
-   - Click **Add**
-   - **IMPORTANT**: Copy the secret value immediately (you won't see it again)
+---
 
-## Step 3: Configure Messaging Endpoint
+## Step 2: Configure Messaging Endpoint
 
-Your bot needs a public HTTPS endpoint. Options:
+Your bot needs a public HTTPS endpoint to receive messages.
 
 ### For Development (ngrok)
 
 1. Install [ngrok](https://ngrok.com/download)
 2. Run: `ngrok http 3978`
-3. Copy the HTTPS URL (e.g., `https://abc123.ngrok.io`)
-4. In Azure Bot → Configuration → Messaging endpoint:
+3. Copy the HTTPS URL (e.g., `https://abc123.ngrok-free.app`)
+4. In Teams Developer Portal → **Bot management** → Select your bot
+5. Set **Endpoint address** to:
    ```
-   https://abc123.ngrok.io/api/messages
-   ```
-
-### For Production (Azure App Service)
-
-1. Deploy your bot to Azure App Service
-2. Use the App Service URL:
-   ```
-   https://your-app-name.azurewebsites.net/api/messages
+   https://abc123.ngrok-free.app/api/messages
    ```
 
-## Step 4: Enable Teams Channel
+### For Production Options
 
-1. In Azure Bot resource, go to **Channels**
-2. Click **Microsoft Teams** icon
-3. Review and accept the Terms of Service
-4. Click **Apply**
-5. Teams channel is now enabled
+- **Cloudflare Tunnel**: Free, persistent URLs
+- **Azure App Service**: If you want Azure hosting
+- **Any HTTPS host**: AWS, GCP, Heroku, VPS, etc.
 
-## Step 5: Configure Environment Variables
+---
+
+## Step 3: Create Teams App
+
+1. In Teams Developer Portal, click **Apps** in the left sidebar
+2. Click **+ New app**
+3. Fill in the basic information:
+   - **Short name**: `Claude Dispatch`
+   - **Full name**: `Claude Dispatch - AI Code Assistant`
+   - **Short description**: `Control Claude Code or OpenCode from Teams`
+   - **Full description**: `Start, stop, and communicate with AI coding assistants directly from Microsoft Teams channels`
+   - **Developer/Company name**: Your name or company
+
+---
+
+## Step 4: Configure App Features
+
+### Add Bot Capability
+
+1. In your app, go to **App features** in the left sidebar
+2. Click **Bot**
+3. Select **Enter a bot ID**
+4. Enter your Bot ID from Step 1
+5. Check the scopes where the bot can be used:
+   - [x] **Team** - Use in channels
+   - [x] **Group chat** - Use in group chats
+   - [x] **Personal** - Use in 1:1 chats
+
+### Configure Bot Commands
+
+Under **Commands**, add these:
+
+| Command | Description | Scope |
+|---------|-------------|-------|
+| `claude-start` | Start a Claude instance: claude-start <name> <path> | Team, Group chat |
+| `claude-stop` | Stop a Claude instance: claude-stop <name> | Team, Group chat |
+| `claude-list` | List all running Claude instances | Team, Group chat |
+| `claude-send` | Send message: claude-send <name> <message> | Team, Group chat |
+
+---
+
+## Step 5: Add App Icons
+
+1. Go to **Basic information** → **Branding**
+2. Upload two icons:
+   - **Color icon**: 192x192 pixels (PNG)
+   - **Outline icon**: 32x32 pixels (transparent PNG)
+
+> **Tip**: You can use placeholder icons initially and update later.
+
+---
+
+## Step 6: Configure Environment Variables
 
 Create a `.env` file in the project root:
 
 ```env
-# Microsoft Bot Framework credentials
-MICROSOFT_APP_ID=your-app-id-here
+# Microsoft Bot Framework credentials (from Step 1)
+MICROSOFT_APP_ID=your-bot-id-here
 MICROSOFT_APP_PASSWORD=your-client-secret-here
 
 # Bot server configuration
 PORT=3978
 
-# Optional: Tenant restriction (for single-tenant apps)
+# Optional: For single-tenant apps, specify your tenant ID
 # MICROSOFT_APP_TENANT_ID=your-tenant-id
 ```
 
-## Step 6: Create Teams App Manifest
+---
 
-Create a `teams-manifest` folder with these files:
-
-### manifest.json
-
-```json
-{
-  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
-  "manifestVersion": "1.16",
-  "version": "1.0.0",
-  "id": "YOUR-APP-ID-HERE",
-  "packageName": "com.yourcompany.claudedispatch",
-  "developer": {
-    "name": "Your Company",
-    "websiteUrl": "https://github.com/bobum/claude-dispatch",
-    "privacyUrl": "https://github.com/bobum/claude-dispatch",
-    "termsOfUseUrl": "https://github.com/bobum/claude-dispatch"
-  },
-  "name": {
-    "short": "Claude Dispatch",
-    "full": "Claude Dispatch - Control Claude Code from Teams"
-  },
-  "description": {
-    "short": "Control Claude Code instances from Teams",
-    "full": "Claude Dispatch allows you to start, stop, and communicate with Claude Code instances directly from Microsoft Teams channels. Perfect for collaborative AI-assisted development."
-  },
-  "icons": {
-    "outline": "outline.png",
-    "color": "color.png"
-  },
-  "accentColor": "#6B4C9A",
-  "bots": [
-    {
-      "botId": "YOUR-APP-ID-HERE",
-      "scopes": ["team", "personal", "groupchat"],
-      "supportsFiles": false,
-      "isNotificationOnly": false,
-      "commandLists": [
-        {
-          "scopes": ["team", "groupchat"],
-          "commands": [
-            {
-              "title": "claude-start",
-              "description": "Start a Claude instance: claude-start <name> <project-path>"
-            },
-            {
-              "title": "claude-stop",
-              "description": "Stop a Claude instance: claude-stop <name>"
-            },
-            {
-              "title": "claude-list",
-              "description": "List all running Claude instances"
-            },
-            {
-              "title": "claude-send",
-              "description": "Send message to instance: claude-send <name> <message>"
-            }
-          ]
-        }
-      ]
-    }
-  ],
-  "permissions": ["identity", "messageTeamMembers"],
-  "validDomains": []
-}
-```
-
-### Icons
-
-You'll need two icon files in the `teams-manifest` folder:
-- `color.png` - 192x192 pixel color icon
-- `outline.png` - 32x32 pixel outline icon (transparent background)
-
-## Step 7: Package and Upload Teams App
-
-### Create the App Package
-
-1. Update `manifest.json`:
-   - Replace `YOUR-APP-ID-HERE` with your Microsoft App ID (in two places)
-   - Update developer information
-2. Create a ZIP file containing:
-   - `manifest.json`
-   - `color.png`
-   - `outline.png`
-
-### Upload to Teams
-
-#### For Development/Testing (Sideloading)
-
-1. In Teams, click **Apps** in the sidebar
-2. Click **Manage your apps** → **Upload an app**
-3. Select **Upload a custom app**
-4. Choose your ZIP file
-5. Click **Add** to install
-
-#### For Organization-wide Deployment
-
-1. Go to [Teams Admin Center](https://admin.teams.microsoft.com)
-2. Navigate to **Teams apps** → **Manage apps**
-3. Click **Upload new app**
-4. Upload your ZIP file
-5. Set app policies to allow the app
-
-## Step 8: Start the Bot
+## Step 7: Start the Bot Server
 
 ```bash
 # Install dependencies
 npm install
 
-# Start the bot
-npm start
+# Start the Teams bot
+npm run start:teams
 ```
 
-## Step 9: Add Bot to a Channel
+You should see:
+```
+Claude Dispatch (Teams) is starting...
+Bot server listening on port 3978
+```
 
-1. In Teams, go to the channel where you want Claude
-2. Click the **+** tab or go to channel settings
-3. Click **Get more apps** or search for "Claude Dispatch"
-4. Add the bot to the channel
+---
 
-## Usage
+## Step 8: Test Your Bot
 
-### Starting an Instance
+### Preview in Teams
 
-In a Teams channel, type:
+1. In Teams Developer Portal, go to your app
+2. Click **Preview in Teams** (top right)
+3. Select where to install (a team or chat)
+4. Click **Add**
+
+### Sideload for Testing
+
+1. In your app, go to **Publish** → **Publish to your org**
+2. Click **Download app package** to get the ZIP file
+3. In Teams:
+   - Click **Apps** in the sidebar
+   - Click **Manage your apps** → **Upload an app**
+   - Select **Upload a custom app**
+   - Choose your ZIP file
+
+---
+
+## Step 9: Using the Bot
+
+### Start an Instance
+
+In a Teams channel or chat, mention the bot:
 ```
 @Claude Dispatch claude-start my-project C:\path\to\project
 ```
 
-### Sending Messages
+### Send Messages
 
-Once started, any message in that channel will be sent to Claude:
+Once started, mention the bot with your message:
 ```
 @Claude Dispatch What files are in this project?
 ```
@@ -244,95 +197,134 @@ Or use the direct command:
 @Claude Dispatch claude-send my-project List all JavaScript files
 ```
 
-### Listing Instances
+### List Instances
 
 ```
 @Claude Dispatch claude-list
 ```
 
-### Stopping an Instance
+### Stop an Instance
 
 ```
 @Claude Dispatch claude-stop my-project
 ```
 
+---
+
 ## Troubleshooting
 
 ### Bot Not Responding
 
-1. Check that your messaging endpoint is accessible
-2. Verify ngrok is running (for development)
-3. Check Azure Bot Service health in Azure Portal
-4. Review bot logs for errors
+1. **Check endpoint**: Verify ngrok is running and the URL is correct in Bot management
+2. **Check credentials**: Ensure MICROSOFT_APP_ID and MICROSOFT_APP_PASSWORD match what's in Developer Portal
+3. **Check logs**: Look at the bot server console for error messages
 
 ### "App Not Found" Error
 
-1. Ensure the app is properly uploaded
-2. Check that sideloading is enabled in your tenant
-3. Verify the manifest.json has correct App ID
+1. Ensure the app is uploaded/installed
+2. Check that custom app uploading is enabled in your tenant:
+   - Teams Admin Center → Teams apps → Setup policies
+   - Enable "Upload custom apps"
 
 ### Authentication Errors
 
-1. Verify MICROSOFT_APP_ID matches Azure Bot configuration
-2. Ensure MICROSOFT_APP_PASSWORD is correct (client secret, not ID)
-3. Check secret hasn't expired
+```
+Error: BotFrameworkAdapter: Unauthorized
+```
+
+1. Verify MICROSOFT_APP_ID is the Bot ID (not App ID from manifest)
+2. Verify MICROSOFT_APP_PASSWORD is the client secret value
+3. Check the secret hasn't expired
 
 ### Messages Not Being Processed
 
-1. Ensure bot is mentioned in channel messages (@Claude Dispatch)
-2. Check that the bot has permissions in the channel
-3. Verify Teams channel is enabled in Azure Bot
+1. Ensure bot is mentioned (@Claude Dispatch) in channel messages
+2. Personal chats don't require mentions
+3. Verify the bot was added to the team/channel
+
+---
+
+## Advanced: Organization-wide Deployment
+
+### Admin Center Deployment
+
+1. Go to [Teams Admin Center](https://admin.teams.microsoft.com)
+2. Navigate to **Teams apps** → **Manage apps**
+3. Click **Upload new app**
+4. Upload your app package (ZIP)
+5. Configure **App setup policies** to make it available
+
+### App Catalog Submission
+
+For wider distribution:
+1. In Developer Portal, go to **Publish** → **Publish to your org**
+2. Submit for admin approval
+3. Admins approve in Teams Admin Center
+
+---
 
 ## Security Considerations
 
-1. **Client Secret**: Never commit your `.env` file. Use Azure Key Vault for production.
-2. **Tenant Restriction**: Consider single-tenant deployment for internal use.
-3. **Permissions**: The bot runs with `--dangerously-skip-permissions` flag. Ensure only authorized users have access.
-4. **Network**: In production, restrict access to your bot endpoint via Azure networking.
+1. **Client Secret Rotation**: Set calendar reminders before expiry
+2. **Tenant Restriction**: Use single-tenant for internal-only apps
+3. **Permission Model**: The bot runs with `--dangerously-skip-permissions` flag. Restrict who can add the bot.
+4. **Network Security**: For production, consider:
+   - IP allowlisting
+   - Private endpoints
+   - VPN requirements
 
-## Production Deployment
+---
 
-For production, consider:
+## Comparison: Azure Portal vs Developer Portal
 
-1. **Azure App Service**: Deploy the Node.js app
-2. **Azure Key Vault**: Store secrets securely
-3. **Application Insights**: Add monitoring and logging
-4. **Auto-scaling**: Configure based on expected load
+| Aspect | Teams Developer Portal | Azure Portal |
+|--------|----------------------|--------------|
+| **Complexity** | Simpler, Teams-focused | More options, steeper learning curve |
+| **Cost** | Free | Free for Teams channel |
+| **Multi-tenant** | Single-tenant by default | Supports multi-tenant |
+| **SSO Support** | Requires additional Entra ID setup | Built-in support |
+| **Other channels** | Teams only | Slack, Web, etc. |
+| **Best for** | Quick setup, Teams-only bots | Enterprise, multi-channel |
 
-### Azure CLI Deployment Example
+> **Note**: Both approaches use the same Bot Framework Service under the hood. The Developer Portal just simplifies the registration process.
 
+---
+
+## Production Hosting Options
+
+### Option 1: Always-on Desktop (Simplest)
+
+Run the bot on your development machine:
 ```bash
-# Login to Azure
-az login
-
-# Create resource group
-az group create --name claude-dispatch-rg --location eastus
-
-# Create App Service plan
-az appservice plan create --name claude-dispatch-plan --resource-group claude-dispatch-rg --sku B1 --is-linux
-
-# Create web app
-az webapp create --name claude-dispatch-bot --resource-group claude-dispatch-rg --plan claude-dispatch-plan --runtime "NODE|18-lts"
-
-# Configure app settings
-az webapp config appsettings set --name claude-dispatch-bot --resource-group claude-dispatch-rg --settings MICROSOFT_APP_ID=your-app-id MICROSOFT_APP_PASSWORD=your-secret
-
-# Deploy code
-az webapp deployment source config-local-git --name claude-dispatch-bot --resource-group claude-dispatch-rg
+# Using PM2 for auto-restart
+npm install -g pm2
+pm2 start src/teams-bot.js --name claude-dispatch-teams
+pm2 save
+pm2 startup
 ```
 
-## Comparison: Slack vs Teams
+### Option 2: Cloud VM
 
-| Feature | Slack | Teams |
-|---------|-------|-------|
-| Connection | Socket Mode (WebSocket) | HTTP Webhooks |
-| Commands | Slash commands (/claude-start) | Bot mentions (@bot claude-start) |
-| Authentication | Bot Token + App Token | Azure AD + Client Secret |
-| Message Format | Markdown (mrkdwn) | Adaptive Cards / Markdown |
-| Character Limit | 4,000 chars | 28 KB per message |
-| Setup Complexity | Low (app dashboard) | Medium (Azure Portal + Teams Admin) |
+Deploy to any cloud VM (Azure, AWS, GCP, DigitalOcean):
+1. Install Node.js 18+
+2. Install Claude/OpenCode CLI
+3. Clone the repo and configure .env
+4. Run with PM2 or systemd
+
+### Option 3: Container
+
+```dockerfile
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
+CMD ["npm", "run", "start:teams"]
+```
+
+---
 
 ## Support
 
-For issues specific to this Teams implementation, please open an issue at:
+For issues, please open a ticket at:
 https://github.com/bobum/claude-dispatch/issues

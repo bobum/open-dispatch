@@ -2,6 +2,8 @@
 
 This folder contains the Microsoft Teams app manifest for Claude Dispatch.
 
+> **Note**: If using Teams Developer Portal (recommended), you can create the app there and skip manual manifest editing. The portal generates the manifest for you. This folder is for manual/advanced configurations.
+
 ## Files Required
 
 1. **manifest.json** - App configuration (included, needs customization)
@@ -10,8 +12,17 @@ This folder contains the Microsoft Teams app manifest for Claude Dispatch.
 
 ## Setup Instructions
 
+### Option A: Teams Developer Portal (Recommended)
+
+1. Go to [Teams Developer Portal](https://dev.teams.microsoft.com)
+2. Create your app and bot there (see TEAMS_SETUP.md)
+3. The portal generates the manifest automatically
+4. Use **Download app package** to get a ready-to-use ZIP
+
+### Option B: Manual Manifest (This Folder)
+
 1. **Edit manifest.json:**
-   - Replace `YOUR-MICROSOFT-APP-ID-HERE` with your Azure Bot's Microsoft App ID (appears in two places)
+   - Replace `YOUR-MICROSOFT-APP-ID-HERE` with your Bot ID from Teams Developer Portal (appears in two places)
    - Update the `developer` section with your company info
    - Update URLs if you have custom privacy/terms pages
 
@@ -46,7 +57,7 @@ For a quick start, you can create simple icons:
 
 ### For Single-Tenant Deployment
 
-If you want to restrict the app to your organization only, you can add tenant restrictions in your Azure Bot configuration rather than in the manifest.
+Bots created via Teams Developer Portal are single-tenant by default. For manual manifests, you can add tenant restrictions in your bot configuration.
 
 ### Adding More Commands
 
