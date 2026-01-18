@@ -1,15 +1,15 @@
 /**
- * Teams Bot with Claude Code Backend
+ * Teams Bot with OpenCode Backend
  * 
- * This bot connects Microsoft Teams to Claude Code CLI.
- * For OpenCode support (75+ AI providers), use teams-opencode-bot.js instead.
+ * This bot uses OpenCode (supporting 75+ AI providers) instead of Claude CLI.
+ * Use this when you want to use OpenAI, Google, local models, etc.
  */
 
 require('dotenv').config();
 
 const { BotFrameworkAdapter, ActivityTypes, CardFactory, TurnContext } = require('botbuilder');
 const restify = require('restify');
-const { createInstanceManager, chunkText } = require('./claude-core');
+const { createInstanceManager, chunkText } = require('./opencode-core');
 
 // Create HTTP server
 const server = restify.createServer();
@@ -29,14 +29,26 @@ adapter.onTurnError = async (context, error) => {
   await context.sendActivity('Sorry, something went wrong. Please try again.');
 };
 
-// Create instance manager
-const instanceManager = createInstanceManager();
+// Create instance manager with optional model override
+const instanceManager = createInstanceManager({
+  model: process.env.OPENCODE_MODEL || null
+});
 
 // ============================================
 // ADAPTIVE CARD TEMPLATES
 // ============================================
 
-function createInstanceStartedCard(instanceId, projectDir, sessionId) {
+function createInstanceStartedCard(instanceId, projectDir, sessionId, model) {
+  const facts = [
+    { title: 'Instance', value: instanceId },
+    { title: 'Project', value: projectDir },
+    { title: 'Session', value: sessionId.substring(0, 8) + '...' }
+  ];
+  
+  if (model) {
+    facts.push({ title: 'Model', value: model });
+  }
+
   return CardFactory.adaptiveCard({
     type: 'AdaptiveCard',
     $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
@@ -44,22 +56,18 @@ function createInstanceStartedCard(instanceId, projectDir, sessionId) {
     body: [
       {
         type: 'TextBlock',
-        text: '✅ Claude Instance Started',
+        text: '✅ OpenCode Instance Started',
         weight: 'Bolder',
         size: 'Medium',
         color: 'Good'
       },
       {
         type: 'FactSet',
-        facts: [
-          { title: 'Instance', value: instanceId },
-          { title: 'Project', value: projectDir },
-          { title: 'Session', value: sessionId.substring(0, 8) + '...' }
-        ]
+        facts
       },
       {
         type: 'TextBlock',
-        text: 'Messages in this conversation will now be sent to Claude.',
+        text: 'Messages in this conversation will now be sent to OpenCode.',
         wrap: true,
         spacing: 'Medium'
       }
@@ -75,7 +83,7 @@ function createInstanceStoppedCard(instanceId) {
     body: [
       {
         type: 'TextBlock',
-        text: '🛑 Claude Instance Stopped',
+        text: '🛑 OpenCode Instance Stopped',
         weight: 'Bolder',
         size: 'Medium',
         color: 'Attention'
@@ -104,28 +112,28 @@ function createInstanceListCard(instancesData) {
         },
         {
           type: 'TextBlock',
-          text: 'Use `claude-start <name> <project-path>` to start a new instance.',
+          text: 'Use `opencode-start <name> <project-path>` to start a new instance.',
           wrap: true
         }
       ]
     });
   }
 
-  const items = instancesData.map(({ instanceId, instance }) => {
-    const uptime = Math.round((Date.now() - instance.startedAt.getTime()) / 1000 / 60);
+  const items = instancesData.map((inst) => {
+    const uptime = Math.round((Date.now() - inst.startedAt.getTime()) / 1000 / 60);
     return {
       type: 'Container',
       items: [
         {
           type: 'TextBlock',
-          text: `**${instanceId}**`,
+          text: `**${inst.instanceId}**`,
           weight: 'Bolder'
         },
         {
           type: 'FactSet',
           facts: [
-            { title: 'Project', value: instance.projectDir },
-            { title: 'Messages', value: String(instance.messageCount) },
+            { title: 'Project', value: inst.projectDir },
+            { title: 'Messages', value: String(inst.messageCount) },
             { title: 'Uptime', value: `${uptime} minutes` }
           ]
         }
@@ -142,7 +150,7 @@ function createInstanceListCard(instancesData) {
     body: [
       {
         type: 'TextBlock',
-        text: '📋 Running Claude Instances',
+        text: '📋 Running OpenCode Instances',
         weight: 'Bolder',
         size: 'Medium'
       },
@@ -173,47 +181,9 @@ function createErrorCard(title, message) {
   });
 }
 
-function createThinkingCard() {
-  return CardFactory.adaptiveCard({
-    type: 'AdaptiveCard',
-    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
-    version: '1.4',
-    body: [
-      {
-        type: 'TextBlock',
-        text: '🤔 Thinking...',
-        weight: 'Bolder',
-        isSubtle: true
-      }
-    ]
-  });
-}
-
 // ============================================
-// HELPER FUNCTIONS
+// MESSAGE HANDLING
 // ============================================
-
-/**
- * Get conversation reference ID for lookups
- */
-function getConversationId(conversationRef) {
-  return conversationRef.conversation?.id || conversationRef.conversation;
-}
-
-/**
- * Find instance by conversation reference
- */
-function getInstanceByConversation(conversationRef) {
-  const convId = getConversationId(conversationRef);
-  const allInstances = instanceManager.listInstances();
-  
-  for (const inst of allInstances) {
-    if (getConversationId(inst.channel) === convId) {
-      return { instanceId: inst.instanceId, instance: inst };
-    }
-  }
-  return null;
-}
 
 /**
  * Post response to Teams (handles long messages by chunking)
@@ -228,17 +198,44 @@ async function postToTeams(context, text) {
 }
 
 /**
+ * Get conversation reference ID for lookups
+ */
+function getConversationId(conversationRef) {
+  return conversationRef.conversation?.id || conversationRef.conversation;
+}
+
+/**
+ * Find instance by conversation reference
+ */
+function getInstanceByConversation(conversationRef) {
+  const convId = getConversationId(conversationRef);
+  const instances = instanceManager.listInstances();
+  
+  for (const inst of instances) {
+    if (getConversationId(inst.channel) === convId) {
+      return { instanceId: inst.instanceId, instance: inst };
+    }
+  }
+  return null;
+}
+
+/**
  * Parse command from message text
  */
 function parseCommand(text) {
   // Remove bot mention (Teams includes @mention in message)
   const cleanText = text.replace(/<at>.*?<\/at>/g, '').trim();
 
-  // Check for commands
-  const commandMatch = cleanText.match(/^(claude-start|claude-stop|claude-list|claude-send)\s*(.*)?$/i);
+  // Check for commands (support both opencode-* and claude-* prefixes for flexibility)
+  const commandMatch = cleanText.match(/^(opencode-start|opencode-stop|opencode-list|opencode-send|claude-start|claude-stop|claude-list|claude-send)\s*(.*)?$/i);
   if (commandMatch) {
+    // Normalize command names (claude-* -> opencode-*)
+    let command = commandMatch[1].toLowerCase();
+    if (command.startsWith('claude-')) {
+      command = command.replace('claude-', 'opencode-');
+    }
     return {
-      command: commandMatch[1].toLowerCase(),
+      command,
       args: (commandMatch[2] || '').trim()
     };
   }
@@ -260,11 +257,11 @@ async function botLogic(context) {
     // Handle commands
     if (command) {
       switch (command) {
-        case 'claude-start': {
+        case 'opencode-start': {
           const parts = args.split(/\s+/);
           if (parts.length < 2) {
             await context.sendActivity({
-              attachments: [createErrorCard('Invalid Usage', 'Usage: `claude-start <instance-name> <project-directory>`')]
+              attachments: [createErrorCard('Invalid Usage', 'Usage: `opencode-start <instance-name> <project-directory>`')]
             });
             return;
           }
@@ -277,7 +274,7 @@ async function botLogic(context) {
 
           if (result.success) {
             await context.sendActivity({
-              attachments: [createInstanceStartedCard(instanceId, projectDir, result.sessionId)]
+              attachments: [createInstanceStartedCard(instanceId, projectDir, result.sessionId, process.env.OPENCODE_MODEL)]
             });
           } else {
             await context.sendActivity({
@@ -287,11 +284,11 @@ async function botLogic(context) {
           break;
         }
 
-        case 'claude-stop': {
+        case 'opencode-stop': {
           const instanceId = args;
           if (!instanceId) {
             await context.sendActivity({
-              attachments: [createErrorCard('Invalid Usage', 'Usage: `claude-stop <instance-name>`')]
+              attachments: [createErrorCard('Invalid Usage', 'Usage: `opencode-stop <instance-name>`')]
             });
             return;
           }
@@ -310,11 +307,8 @@ async function botLogic(context) {
           break;
         }
 
-        case 'claude-list': {
-          const instancesData = instanceManager.listInstances().map((inst) => ({
-            instanceId: inst.instanceId,
-            instance: inst
-          }));
+        case 'opencode-list': {
+          const instancesData = instanceManager.listInstances();
 
           await context.sendActivity({
             attachments: [createInstanceListCard(instancesData)]
@@ -322,11 +316,11 @@ async function botLogic(context) {
           break;
         }
 
-        case 'claude-send': {
+        case 'opencode-send': {
           const match = args.match(/^(\S+)\s+(.+)$/s);
           if (!match) {
             await context.sendActivity({
-              attachments: [createErrorCard('Invalid Usage', 'Usage: `claude-send <instance-name> <message>`')]
+              attachments: [createErrorCard('Invalid Usage', 'Usage: `opencode-send <instance-name> <message>`')]
             });
             return;
           }
@@ -377,12 +371,12 @@ async function botLogic(context) {
     } else if (!found && messageText) {
       // No active instance, provide help
       await context.sendActivity(
-        'No Claude instance is running in this conversation.\n\n' +
+        'No OpenCode instance is running in this conversation.\n\n' +
         '**Commands:**\n' +
-        '- `claude-start <name> <project-path>` - Start a new instance\n' +
-        '- `claude-stop <name>` - Stop an instance\n' +
-        '- `claude-list` - List running instances\n' +
-        '- `claude-send <name> <message>` - Send to a specific instance'
+        '- `opencode-start <name> <project-path>` - Start a new instance\n' +
+        '- `opencode-stop <name>` - Stop an instance\n' +
+        '- `opencode-list` - List running instances\n' +
+        '- `opencode-send <name> <message>` - Send to a specific instance'
       );
     }
   } else if (context.activity.type === ActivityTypes.ConversationUpdate) {
@@ -390,14 +384,15 @@ async function botLogic(context) {
     if (context.activity.membersAdded) {
       for (const member of context.activity.membersAdded) {
         if (member.id !== context.activity.recipient.id) {
+          const modelInfo = process.env.OPENCODE_MODEL ? `\n\n**Model:** ${process.env.OPENCODE_MODEL}` : '';
           await context.sendActivity(
-            '👋 Hello! I\'m Claude Dispatch.\n\n' +
-            'I help you control Claude Code instances from Teams.\n\n' +
+            '👋 Hello! I\'m OpenCode Dispatch.\n\n' +
+            'I help you control OpenCode instances (75+ AI providers) from Teams.' + modelInfo + '\n\n' +
             '**Commands:**\n' +
-            '- `claude-start <name> <project-path>` - Start a new instance\n' +
-            '- `claude-stop <name>` - Stop an instance\n' +
-            '- `claude-list` - List running instances\n' +
-            '- `claude-send <name> <message>` - Send to a specific instance'
+            '- `opencode-start <name> <project-path>` - Start a new instance\n' +
+            '- `opencode-stop <name>` - Stop an instance\n' +
+            '- `opencode-list` - List running instances\n' +
+            '- `opencode-send <name> <message>` - Send to a specific instance'
           );
         }
       }
@@ -418,17 +413,21 @@ server.post('/api/messages', async (req, res) => {
 server.get('/health', (req, res, next) => {
   res.send(200, { 
     status: 'healthy', 
-    backend: 'claude',
-    instances: instanceManager.listInstances().length 
+    instances: instanceManager.listInstances().length,
+    backend: 'opencode',
+    model: process.env.OPENCODE_MODEL || 'default'
   });
   next();
 });
 
 // Start server
 server.listen(PORT, () => {
-  console.log(`Claude Dispatch (Teams) is running on port ${PORT}`);
-  console.log(`Backend: Claude Code CLI`);
+  console.log(`OpenCode Dispatch (Teams) is running on port ${PORT}`);
   console.log(`Messaging endpoint: http://localhost:${PORT}/api/messages`);
+  console.log(`Backend: OpenCode`);
+  if (process.env.OPENCODE_MODEL) {
+    console.log(`Model: ${process.env.OPENCODE_MODEL}`);
+  }
   console.log('');
   console.log('For local development with ngrok:');
   console.log(`  ngrok http ${PORT}`);

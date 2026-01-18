@@ -7,9 +7,11 @@
     "start": "node src/bot.js",
     "start:teams": "node src/teams-bot.js",
     "start:opencode": "node src/opencode-bot.js",
+    "start:teams:opencode": "node src/teams-opencode-bot.js",
     "dev": "node --watch src/bot.js",
     "dev:teams": "node --watch src/teams-bot.js",
     "dev:opencode": "node --watch src/opencode-bot.js",
+    "dev:teams:opencode": "node --watch src/teams-opencode-bot.js",
     "test": "node --test tests/*.test.js"
   },
   "keywords": [
