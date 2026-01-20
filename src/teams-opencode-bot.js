@@ -42,6 +42,12 @@ const instanceManager = createInstanceManager({
   model: process.env.OPENCODE_MODEL || null
 });
 
+// User session state: tracks which instance each user has selected.
+// Key: aadObjectId (Teams user ID), Value: instanceId.
+// NOTE: This Map is in-memory only. All selections will be lost if the bot process restarts.
+// For production use, consider backing this with persistent storage (e.g., database or cache).
+const userSelectedInstance = new Map();
+
 // ============================================
 // ADAPTIVE CARD TEMPLATES
 // ============================================
@@ -105,7 +111,7 @@ function createInstanceStoppedCard(instanceId) {
   });
 }
 
-function createInstanceListCard(instancesData) {
+function createInstanceListCard(instancesData, selectedInstanceId) {
   if (instancesData.length === 0) {
     return CardFactory.adaptiveCard({
       type: 'AdaptiveCard',
@@ -120,7 +126,7 @@ function createInstanceListCard(instancesData) {
         },
         {
           type: 'TextBlock',
-          text: 'Use `opencode-start <name> <project-path>` to start a new instance.',
+          text: 'Use `oc-start <name> <project-path>` to start a new instance.',
           wrap: true
         }
       ]
@@ -129,12 +135,14 @@ function createInstanceListCard(instancesData) {
 
   const items = instancesData.map((inst) => {
     const uptime = Math.round((Date.now() - inst.startedAt.getTime()) / 1000 / 60);
+    const isSelected = inst.instanceId === selectedInstanceId;
+    const nameDisplay = isSelected ? `**${inst.instanceId}** ✅ (selected)` : `**${inst.instanceId}**`;
     return {
       type: 'Container',
       items: [
         {
           type: 'TextBlock',
-          text: `**${inst.instanceId}**`,
+          text: nameDisplay,
           weight: 'Bolder'
         },
         {
@@ -189,6 +197,40 @@ function createErrorCard(title, message) {
   });
 }
 
+function createInstanceSelectedCard(instanceId, projectDir) {
+  return CardFactory.adaptiveCard({
+    type: 'AdaptiveCard',
+    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+    version: '1.4',
+    body: [
+      {
+        type: 'TextBlock',
+        text: '🎯 Instance Selected',
+        weight: 'Bolder',
+        size: 'Medium',
+        color: 'Good'
+      },
+      {
+        type: 'FactSet',
+        facts: [
+          { title: 'Instance', value: instanceId },
+          { title: 'Project', value: projectDir }
+        ]
+      },
+      {
+        type: 'TextBlock',
+        text: 'Your messages will now be sent to this instance. Use `oc-select <name>` to switch or `oc-clear` to deselect.',
+        wrap: true,
+        spacing: 'Medium'
+      }
+    ]
+  });
+}
+
+function getUserId(context) {
+  return context.activity.from?.aadObjectId || context.activity.from?.id;
+}
+
 // ============================================
 // MESSAGE HANDLING
 // ============================================
@@ -227,20 +269,18 @@ function getInstanceByConversation(conversationRef) {
   return null;
 }
 
-/**
- * Parse command from message text
- */
 function parseCommand(text) {
-  // Remove bot mention (Teams includes @mention in message)
   const cleanText = text.replace(/<at>.*?<\/at>/g, '').trim();
 
-  // Check for commands (support both opencode-* and claude-* prefixes for flexibility)
-  const commandMatch = cleanText.match(/^(opencode-start|opencode-stop|opencode-list|opencode-send|claude-start|claude-stop|claude-list|claude-send)\s*(.*)?$/i);
+  // Support oc-*, opencode-*, and claude-* prefixes
+  const commandMatch = cleanText.match(/^(oc-start|oc-stop|oc-list|oc-send|oc-select|oc-clear|opencode-start|opencode-stop|opencode-list|opencode-send|opencode-select|opencode-clear|claude-start|claude-stop|claude-list|claude-send|claude-select|claude-clear)\s*(.*)?$/i);
   if (commandMatch) {
-    // Normalize command names (claude-* -> opencode-*)
     let command = commandMatch[1].toLowerCase();
-    if (command.startsWith('claude-')) {
-      command = command.replace('claude-', 'opencode-');
+    // Normalize to oc-* format
+    if (command.startsWith('opencode-')) {
+      command = command.replace('opencode-', 'oc-');
+    } else if (command.startsWith('claude-')) {
+      command = command.replace('claude-', 'oc-');
     }
     return {
       command,
@@ -265,11 +305,11 @@ async function botLogic(context) {
     // Handle commands
     if (command) {
       switch (command) {
-        case 'opencode-start': {
+        case 'oc-start': {
           const parts = args.split(/\s+/);
           if (parts.length < 2) {
             await context.sendActivity({
-              attachments: [createErrorCard('Invalid Usage', 'Usage: `opencode-start <instance-name> <project-directory>`')]
+              attachments: [createErrorCard('Invalid Usage', 'Usage: `oc-start <instance-name> <project-directory>`')]
             });
             return;
           }
@@ -292,11 +332,11 @@ async function botLogic(context) {
           break;
         }
 
-        case 'opencode-stop': {
+        case 'oc-stop': {
           const instanceId = args;
           if (!instanceId) {
             await context.sendActivity({
-              attachments: [createErrorCard('Invalid Usage', 'Usage: `opencode-stop <instance-name>`')]
+              attachments: [createErrorCard('Invalid Usage', 'Usage: `oc-stop <instance-name>`')]
             });
             return;
           }
@@ -315,20 +355,22 @@ async function botLogic(context) {
           break;
         }
 
-        case 'opencode-list': {
+        case 'oc-list': {
           const instancesData = instanceManager.listInstances();
+          const userId = getUserId(context);
+          const selectedInstanceId = userSelectedInstance.get(userId);
 
           await context.sendActivity({
-            attachments: [createInstanceListCard(instancesData)]
+            attachments: [createInstanceListCard(instancesData, selectedInstanceId)]
           });
           break;
         }
 
-        case 'opencode-send': {
+        case 'oc-send': {
           const match = args.match(/^(\S+)\s+(.+)$/s);
           if (!match) {
             await context.sendActivity({
-              attachments: [createErrorCard('Invalid Usage', 'Usage: `opencode-send <instance-name> <message>`')]
+              attachments: [createErrorCard('Invalid Usage', 'Usage: `oc-send <instance-name> <message>`')]
             });
             return;
           }
@@ -342,7 +384,7 @@ async function botLogic(context) {
 
           if (result.success && result.responses.length > 0) {
             for (const response of result.responses) {
-              await postToTeams(context, response);
+              await postToTeams(context, `**[${instanceId}]**\n\n${response}`);
             }
           } else if (!result.success) {
             await context.sendActivity({
@@ -351,40 +393,97 @@ async function botLogic(context) {
           }
           break;
         }
+
+        case 'oc-select': {
+          const instanceId = args;
+          if (!instanceId) {
+            await context.sendActivity({
+              attachments: [createErrorCard('Invalid Usage', 'Usage: `oc-select <instance-name>`')]
+            });
+            return;
+          }
+
+          const instance = instanceManager.getInstance(instanceId);
+          if (!instance) {
+            await context.sendActivity({
+              attachments: [createErrorCard('Instance Not Found', `No instance named "${instanceId}" is running. Use \`oc-list\` to see available instances.`)]
+            });
+            return;
+          }
+
+          const userId = getUserId(context);
+          userSelectedInstance.set(userId, instanceId);
+
+          await context.sendActivity({
+            attachments: [createInstanceSelectedCard(instanceId, instance.projectDir)]
+          });
+          break;
+        }
+
+        case 'oc-clear': {
+          const userId = getUserId(context);
+          const hadSelection = userSelectedInstance.has(userId);
+          userSelectedInstance.delete(userId);
+
+          if (hadSelection) {
+            await context.sendActivity('✅ Instance selection cleared. Your messages will no longer be routed automatically.');
+          } else {
+            await context.sendActivity('No instance was selected.');
+          }
+          break;
+        }
       }
       return;
     }
 
-    // No command - check if this conversation has an active instance
-    const conversationRef = TurnContext.getConversationReference(context.activity);
-    const found = getInstanceByConversation(conversationRef);
+    // No command - check user's selected instance first, then conversation binding
+    const userId = getUserId(context);
+    const selectedInstanceId = userSelectedInstance.get(userId);
+    
+    let targetInstanceId = null;
+    
+    if (selectedInstanceId) {
+      if (instanceManager.getInstance(selectedInstanceId)) {
+        targetInstanceId = selectedInstanceId;
+      } else {
+        userSelectedInstance.delete(userId);
+        await context.sendActivity(`⚠️ Your selected instance "${selectedInstanceId}" is no longer running. Selection cleared.`);
+      }
+    }
+    
+    if (!targetInstanceId) {
+      const conversationRef = TurnContext.getConversationReference(context.activity);
+      const found = getInstanceByConversation(conversationRef);
+      if (found) {
+        targetInstanceId = found.instanceId;
+      }
+    }
 
-    if (found && messageText) {
-      console.log(`[DEBUG] Found instance: ${found.instanceId}`);
+    if (targetInstanceId && messageText) {
+      console.log(`[DEBUG] Routing to instance: ${targetInstanceId}`);
 
-      // Send typing indicator
       await context.sendActivity({ type: ActivityTypes.Typing });
 
-      const result = await instanceManager.sendToInstance(found.instanceId, messageText);
+      const result = await instanceManager.sendToInstance(targetInstanceId, messageText);
 
       if (result.success && result.responses.length > 0) {
         for (const response of result.responses) {
-          await postToTeams(context, response);
+          await postToTeams(context, `**[${targetInstanceId}]**\n\n${response}`);
         }
       } else if (!result.success) {
         await context.sendActivity({
           attachments: [createErrorCard('Error', result.error)]
         });
       }
-    } else if (!found && messageText) {
-      // No active instance, provide help
+    } else if (!targetInstanceId && messageText) {
       await context.sendActivity(
-        'No OpenCode instance is running in this conversation.\n\n' +
+        'No OpenCode instance selected.\n\n' +
         '**Commands:**\n' +
-        '- `opencode-start <name> <project-path>` - Start a new instance\n' +
-        '- `opencode-stop <name>` - Stop an instance\n' +
-        '- `opencode-list` - List running instances\n' +
-        '- `opencode-send <name> <message>` - Send to a specific instance'
+        '- `oc-start <name> <project-path>` - Start a new instance\n' +
+        '- `oc-select <name>` - Select an instance to chat with\n' +
+        '- `oc-clear` - Clear your instance selection\n' +
+        '- `oc-list` - List running instances\n' +
+        '- `oc-send <name> <message>` - Send to a specific instance'
       );
     }
   } else if (context.activity.type === ActivityTypes.ConversationUpdate) {
@@ -397,10 +496,12 @@ async function botLogic(context) {
             '👋 Hello! I\'m OpenCode Dispatch.\n\n' +
             'I help you control OpenCode instances (75+ AI providers) from Teams.' + modelInfo + '\n\n' +
             '**Commands:**\n' +
-            '- `opencode-start <name> <project-path>` - Start a new instance\n' +
-            '- `opencode-stop <name>` - Stop an instance\n' +
-            '- `opencode-list` - List running instances\n' +
-            '- `opencode-send <name> <message>` - Send to a specific instance'
+            '- `oc-start <name> <project-path>` - Start a new instance\n' +
+            '- `oc-select <name>` - Select an instance to chat with\n' +
+            '- `oc-clear` - Clear your instance selection\n' +
+            '- `oc-stop <name>` - Stop an instance\n' +
+            '- `oc-list` - List running instances\n' +
+            '- `oc-send <name> <message>` - Send to a specific instance'
           );
         }
       }
