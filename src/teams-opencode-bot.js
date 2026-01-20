@@ -7,21 +7,29 @@
 
 require('dotenv').config();
 
-const { BotFrameworkAdapter, ActivityTypes, CardFactory, TurnContext } = require('botbuilder');
+const { 
+  CloudAdapter, 
+  ConfigurationBotFrameworkAuthentication,
+  ActivityTypes, 
+  CardFactory, 
+  TurnContext 
+} = require('botbuilder');
 const restify = require('restify');
 const { createInstanceManager, chunkText } = require('./opencode-core');
 
-// Create HTTP server
 const server = restify.createServer();
 server.use(restify.plugins.bodyParser());
 
 const PORT = process.env.PORT || 3978;
 
-// Create Bot Framework adapter
-const adapter = new BotFrameworkAdapter({
-  appId: process.env.MICROSOFT_APP_ID,
-  appPassword: process.env.MICROSOFT_APP_PASSWORD,
+const botFrameworkAuth = new ConfigurationBotFrameworkAuthentication({
+  MicrosoftAppId: process.env.MICROSOFT_APP_ID,
+  MicrosoftAppPassword: process.env.MICROSOFT_APP_PASSWORD,
+  MicrosoftAppTenantId: process.env.MICROSOFT_APP_TENANT_ID || '',
+  MicrosoftAppType: process.env.MICROSOFT_APP_TENANT_ID ? 'SingleTenant' : 'MultiTenant',
 });
+
+const adapter = new CloudAdapter(botFrameworkAuth);
 
 // Error handling
 adapter.onTurnError = async (context, error) => {

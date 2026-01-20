@@ -131,9 +131,15 @@ MICROSOFT_APP_PASSWORD=your-client-secret-here
 # Bot server configuration
 PORT=3978
 
-# Optional: For single-tenant apps, specify your tenant ID
-# MICROSOFT_APP_TENANT_ID=your-tenant-id
+# REQUIRED: Tenant ID for Teams Developer Portal bots (single-tenant)
+# Find this in Azure Portal → Azure Active Directory → Overview → Tenant ID
+MICROSOFT_APP_TENANT_ID=your-tenant-id-here
+
+# Optional: Specify full path to OpenCode binary if not in PATH
+# OPENCODE_PATH=/home/yourusername/.opencode/bin/opencode
 ```
+
+> **Important**: Teams Developer Portal creates **single-tenant** bots by default. You **must** provide `MICROSOFT_APP_TENANT_ID` or the bot will fail with "Authorization has been denied" errors when trying to respond.
 
 ---
 
@@ -235,6 +241,16 @@ Error: BotFrameworkAdapter: Unauthorized
 1. Verify MICROSOFT_APP_ID is the Bot ID (not App ID from manifest)
 2. Verify MICROSOFT_APP_PASSWORD is the client secret value
 3. Check the secret hasn't expired
+
+```
+RestError: Authorization has been denied for this request.
+```
+
+This error occurs when the bot **receives** messages but **cannot respond**. The most common cause is missing or incorrect Tenant ID:
+
+1. **Add MICROSOFT_APP_TENANT_ID** to your `.env` file (this is required for Teams Developer Portal bots)
+2. Find your Tenant ID: Azure Portal → Azure Active Directory → Overview → Tenant ID
+3. Restart the bot after adding the Tenant ID
 
 ### Messages Not Being Processed
 

@@ -102,14 +102,7 @@ function createInstanceManager(options = {}) {
     const isFirstMessage = instance.messageCount === 0;
     instance.messageCount++;
 
-    // Build command args for OpenCode
-    const args = [
-      'run',
-      '-p', message,
-      '-f', 'json',
-      '-q',
-      '-c', instance.projectDir
-    ];
+    const args = ['run', '--format', 'json'];
 
     if (!isFirstMessage) {
       args.push('--session', instance.sessionId);
@@ -119,11 +112,16 @@ function createInstanceManager(options = {}) {
       args.push('-m', model);
     }
 
+    args.push('--', message);
+
     return new Promise((resolve) => {
-      const proc = spawnFn('opencode', args, {
+      const opencodePath = process.env.OPENCODE_PATH || 'opencode';
+      
+      const proc = spawnFn(opencodePath, args, {
         cwd: instance.projectDir,
-        shell: true,
-        env: { ...process.env }
+        shell: false,
+        env: { ...process.env, TERM: 'dumb' },
+        stdio: ['ignore', 'pipe', 'pipe']
       });
 
       let stdout = '';
@@ -157,13 +155,7 @@ function createInstanceManager(options = {}) {
    * Build CLI arguments for OpenCode
    */
   function buildArgs(message, projectDir, sessionId, isFirstMessage) {
-    const args = [
-      'run',
-      '-p', message,
-      '-f', 'json',
-      '-q',
-      '-c', projectDir
-    ];
+    const args = ['run', '--format', 'json'];
 
     if (!isFirstMessage) {
       args.push('--session', sessionId);
@@ -172,6 +164,8 @@ function createInstanceManager(options = {}) {
     if (model) {
       args.push('-m', model);
     }
+
+    args.push('--', message);
 
     return args;
   }
@@ -223,7 +217,6 @@ function parseOpenCodeOutput(output) {
       result.sessionId = json.sessionId || json.session_id;
     }
   } catch (e) {
-    // Try line-by-line (nd-JSON)
     const lines = output.trim().split('\n');
     for (const line of lines) {
       if (!line.trim()) continue;
@@ -233,8 +226,8 @@ function parseOpenCodeOutput(output) {
         if (text) {
           result.texts.push(text);
         }
-        if (event.sessionId || event.session_id) {
-          result.sessionId = event.sessionId || event.session_id;
+        if (event.sessionID || event.sessionId || event.session_id) {
+          result.sessionId = event.sessionID || event.sessionId || event.session_id;
         }
       } catch (lineErr) {
         if (line.trim() && !line.startsWith('[') && !line.includes('spinner')) {
@@ -255,6 +248,9 @@ function parseOpenCodeOutput(output) {
  * Extract text from OpenCode event object
  */
 function extractEventText(event) {
+  if (event.type === 'text' && event.part?.text) {
+    return event.part.text;
+  }
   if (event.type === 'assistant' && event.message?.content) {
     return extractTextContent(event.message.content);
   }
