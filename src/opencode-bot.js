@@ -3,7 +3,6 @@ require('dotenv').config();
 const { App } = require('@slack/bolt');
 const { spawn } = require('child_process');
 const { randomUUID } = require('crypto');
-const readline = require('readline');
 
 // Initialize Slack app with Socket Mode
 const app = new App({
@@ -16,8 +15,11 @@ const app = new App({
 // Track instances: instanceId → { sessionId, channel, projectDir, messageCount }
 const instances = new Map();
 
+// Optional model override from environment
+const OPENCODE_MODEL = process.env.OPENCODE_MODEL;
+
 /**
- * Start a new Claude Code instance (creates session, doesn't spawn persistent process)
+ * Start a new OpenCode instance (creates session, doesn't spawn persistent process)
  */
 function startInstance(instanceId, projectDir, slackChannel) {
   if (instances.has(instanceId)) {
@@ -39,7 +41,7 @@ function startInstance(instanceId, projectDir, slackChannel) {
 }
 
 /**
- * Send a message to a Claude instance (spawns process, waits for response)
+ * Send a message to an OpenCode instance (spawns process, waits for response)
  */
 async function sendToInstance(instanceId, message) {
   const instance = instances.get(instanceId);
@@ -50,96 +52,174 @@ async function sendToInstance(instanceId, message) {
   const isFirstMessage = instance.messageCount === 0;
   instance.messageCount++;
 
-  // Build command args
-  const args = [
-    '--dangerously-skip-permissions',
-    '--output-format', 'stream-json',
-    '--input-format', 'stream-json',
-    '--verbose'
-  ];
+  // Build command args for OpenCode
+  // opencode run --format json [--session <id>] [-m model] -- <message>
+  const args = ['run', '--format', 'json'];
 
-  if (isFirstMessage) {
-    args.push('--session-id', instance.sessionId);
-  } else {
-    args.push('--resume', instance.sessionId);
+  // Add session continuation for subsequent messages
+  if (!isFirstMessage) {
+    args.push('--session', instance.sessionId);
   }
 
+  // Add model override if specified
+  if (OPENCODE_MODEL) {
+    args.push('-m', OPENCODE_MODEL);
+  }
+
+  args.push('--', message);
+
   return new Promise((resolve) => {
-    const proc = spawn('claude', args, {
+    const proc = spawn('opencode', args, {
       cwd: instance.projectDir,
-      shell: true,
+      shell: false,
       env: { ...process.env }
     });
 
-    const rl = readline.createInterface({ input: proc.stdout });
-    const responses = [];
+    let stdout = '';
+    let stderr = '';
 
-    rl.on('line', (line) => {
-      try {
-        const event = JSON.parse(line);
-
-        // Collect assistant text messages
-        if (event.type === 'assistant' && event.message?.content) {
-          const text = extractText(event.message.content);
-          if (text) {
-            responses.push(text);
-          }
-        }
-      } catch (e) {
-        // Ignore JSON parse errors
-      }
+    proc.stdout.on('data', (data) => {
+      stdout += data.toString();
     });
 
     proc.stderr.on('data', (data) => {
-      const msg = data.toString();
-      // Filter out the stdin close error which is expected
-      if (!msg.includes('Error') || msg.includes('write')) {
-        return;
-      }
-      console.error(`[${instanceId}] stderr: ${msg}`);
+      stderr += data.toString();
     });
 
     proc.on('close', (code) => {
       if (code !== 0 && code !== null) {
         console.error(`[${instanceId}] exited with code ${code}`);
+        if (stderr) {
+          console.error(`[${instanceId}] stderr: ${stderr}`);
+        }
       }
-      resolve({ success: true, responses });
+
+      // Parse JSON output
+      const responses = parseOpenCodeOutput(stdout, instanceId);
+
+      // Store session ID from first response if available
+      if (isFirstMessage && responses.sessionId) {
+        instance.sessionId = responses.sessionId;
+      }
+
+      resolve({ success: true, responses: responses.texts });
     });
 
     proc.on('error', (err) => {
       console.error(`[${instanceId}] failed to spawn:`, err);
       resolve({ success: false, error: err.message });
     });
-
-    // Send the message as JSON
-    const input = JSON.stringify({
-      type: 'user',
-      message: {
-        role: 'user',
-        content: message
-      }
-    });
-
-    proc.stdin.write(input + '\n');
-    proc.stdin.end();
   });
 }
 
 /**
- * Extract text content from Claude's message content blocks
+ * Parse OpenCode's JSON output
+ * OpenCode outputs JSON when using -f json flag
  */
-function extractText(content) {
-  if (Array.isArray(content)) {
-    return content
-      .filter(block => block.type === 'text')
-      .map(block => block.text)
-      .join('\n');
+function parseOpenCodeOutput(output, instanceId) {
+  const result = { texts: [], sessionId: null };
+
+  if (!output.trim()) {
+    return result;
   }
-  return typeof content === 'string' ? content : null;
+
+  try {
+    // Try parsing as a single JSON object first
+    const json = JSON.parse(output);
+
+    // Extract text content based on OpenCode's response structure
+    if (json.response) {
+      result.texts.push(json.response);
+    } else if (json.content) {
+      result.texts.push(extractTextContent(json.content));
+    } else if (json.message) {
+      result.texts.push(typeof json.message === 'string' ? json.message : JSON.stringify(json.message));
+    } else if (typeof json === 'string') {
+      result.texts.push(json);
+    } else {
+      // Fallback: stringify the whole response
+      result.texts.push(JSON.stringify(json, null, 2));
+    }
+
+    // Extract session ID if present
+    if (json.sessionId || json.session_id) {
+      result.sessionId = json.sessionId || json.session_id;
+    }
+  } catch (e) {
+    // If JSON parsing fails, try line-by-line (nd-JSON)
+    const lines = output.trim().split('\n');
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const event = JSON.parse(line);
+        const text = extractEventText(event);
+        if (text) {
+          result.texts.push(text);
+        }
+        if (event.sessionId || event.session_id) {
+          result.sessionId = event.sessionId || event.session_id;
+        }
+      } catch (lineErr) {
+        // If not JSON, treat as plain text
+        if (line.trim() && !line.startsWith('[') && !line.includes('spinner')) {
+          result.texts.push(line);
+        }
+      }
+    }
+  }
+
+  // If we still have no text, use raw output
+  if (result.texts.length === 0 && output.trim()) {
+    result.texts.push(output.trim());
+  }
+
+  return result;
 }
 
 /**
- * Stop a Claude instance
+ * Extract text from OpenCode event object
+ */
+function extractEventText(event) {
+  // Handle various OpenCode event structures
+  if (event.type === 'assistant' && event.message?.content) {
+    return extractTextContent(event.message.content);
+  }
+  if (event.type === 'response' && event.text) {
+    return event.text;
+  }
+  if (event.type === 'text' && event.content) {
+    return event.content;
+  }
+  if (event.response) {
+    return event.response;
+  }
+  if (event.output) {
+    return event.output;
+  }
+  return null;
+}
+
+/**
+ * Extract text content from content blocks (similar to Claude format)
+ */
+function extractTextContent(content) {
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .filter(block => block.type === 'text' || typeof block === 'string')
+      .map(block => typeof block === 'string' ? block : block.text)
+      .join('\n');
+  }
+  if (content.text) {
+    return content.text;
+  }
+  return null;
+}
+
+/**
+ * Stop an OpenCode instance
  */
 function stopInstance(instanceId) {
   const instance = instances.get(instanceId);
@@ -206,16 +286,10 @@ function getInstanceByChannel(channelId) {
 
 // Listen to messages in channels where an instance is running
 app.message(async ({ message, say }) => {
-  console.log(`[DEBUG] Received message in channel ${message.channel}: ${message.text?.substring(0, 50)}`);
-
   // Ignore bot messages and message edits
-  if (message.subtype || message.bot_id) {
-    console.log(`[DEBUG] Ignoring message (subtype: ${message.subtype}, bot_id: ${message.bot_id})`);
-    return;
-  }
+  if (message.subtype || message.bot_id) return;
 
   const found = getInstanceByChannel(message.channel);
-  console.log(`[DEBUG] Found instance: ${found ? found.instanceId : 'none'}`);
   if (found) {
     // Send typing indicator by posting a temporary message
     const thinking = await app.client.chat.postMessage({
@@ -245,13 +319,13 @@ app.message(async ({ message, say }) => {
   }
 });
 
-// Slash command: /claude-start <instanceId> <projectDir>
-app.command('/claude-start', async ({ command, ack, respond }) => {
+// Slash command: /opencode-start <instanceId> <projectDir>
+app.command('/opencode-start', async ({ command, ack, respond }) => {
   await ack();
 
   const parts = command.text.trim().split(/\s+/);
   if (parts.length < 2) {
-    await respond('Usage: `/claude-start <instance-name> <project-directory>`');
+    await respond('Usage: `/opencode-start <instance-name> <project-directory>`');
     return;
   }
 
@@ -261,37 +335,38 @@ app.command('/claude-start', async ({ command, ack, respond }) => {
   const result = startInstance(instanceId, projectDir, command.channel_id);
 
   if (result.success) {
-    await respond(`Started instance *${instanceId}* in \`${projectDir}\`\nSession: \`${result.sessionId}\`\n\nMessages in this channel will be sent to Claude.`);
+    const modelInfo = OPENCODE_MODEL ? `\nModel: \`${OPENCODE_MODEL}\`` : '';
+    await respond(`Started OpenCode instance *${instanceId}* in \`${projectDir}\`\nSession: \`${result.sessionId}\`${modelInfo}\n\nMessages in this channel will be sent to OpenCode.`);
   } else {
     await respond(`Failed to start: ${result.error}`);
   }
 });
 
-// Slash command: /claude-stop <instanceId>
-app.command('/claude-stop', async ({ command, ack, respond }) => {
+// Slash command: /opencode-stop <instanceId>
+app.command('/opencode-stop', async ({ command, ack, respond }) => {
   await ack();
 
   const instanceId = command.text.trim();
   if (!instanceId) {
-    await respond('Usage: `/claude-stop <instance-name>`');
+    await respond('Usage: `/opencode-stop <instance-name>`');
     return;
   }
 
   const result = stopInstance(instanceId);
 
   if (result.success) {
-    await respond(`Stopped instance *${instanceId}*`);
+    await respond(`Stopped OpenCode instance *${instanceId}*`);
   } else {
     await respond(`Failed to stop: ${result.error}`);
   }
 });
 
-// Slash command: /claude-list
-app.command('/claude-list', async ({ ack, respond }) => {
+// Slash command: /opencode-list
+app.command('/opencode-list', async ({ ack, respond }) => {
   await ack();
 
   if (instances.size === 0) {
-    await respond('No instances running.');
+    await respond('No OpenCode instances running.');
     return;
   }
 
@@ -301,22 +376,22 @@ app.command('/claude-list', async ({ ack, respond }) => {
     lines.push(`• *${instanceId}* — \`${instance.projectDir}\` (${instance.messageCount} messages, ${uptime}m uptime)`);
   }
 
-  await respond(`*Running instances:*\n${lines.join('\n')}`);
+  await respond(`*Running OpenCode instances:*\n${lines.join('\n')}`);
 });
 
-// Slash command: /claude-send <instanceId> <message>
-app.command('/claude-send', async ({ command, ack, respond }) => {
+// Slash command: /opencode-send <instanceId> <message>
+app.command('/opencode-send', async ({ command, ack, respond }) => {
   await ack();
 
   const match = command.text.match(/^(\S+)\s+(.+)$/s);
   if (!match) {
-    await respond('Usage: `/claude-send <instance-name> <message>`');
+    await respond('Usage: `/opencode-send <instance-name> <message>`');
     return;
   }
 
   const [, instanceId, message] = match;
 
-  await respond(`Sending to *${instanceId}*...`);
+  await respond(`Sending to OpenCode instance *${instanceId}*...`);
 
   const result = await sendToInstance(instanceId, message);
 
@@ -335,6 +410,9 @@ app.command('/claude-send', async ({ command, ack, respond }) => {
 // Start the app
 (async () => {
   await app.start();
-  console.log('Claude Dispatch is running');
+  console.log('OpenCode Dispatch is running');
   console.log('Waiting for Slack commands...');
+  if (OPENCODE_MODEL) {
+    console.log(`Using model: ${OPENCODE_MODEL}`);
+  }
 })();

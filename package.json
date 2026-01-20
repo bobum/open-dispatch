@@ -1,22 +1,35 @@
 {
   "name": "claude-dispatch",
-  "version": "1.0.0",
-  "description": "Manage and communicate with Claude Code instances via Slack",
+  "version": "2.1.0",
+  "description": "Manage and communicate with Claude Code or OpenCode instances via Slack or Microsoft Teams",
   "main": "src/bot.js",
   "scripts": {
     "start": "node src/bot.js",
-    "dev": "node --watch src/bot.js"
+    "start:teams": "node src/teams-bot.js",
+    "start:opencode": "node src/opencode-bot.js",
+    "start:teams:opencode": "node src/teams-opencode-bot.js",
+    "dev": "node --watch src/bot.js",
+    "dev:teams": "node --watch src/teams-bot.js",
+    "dev:opencode": "node --watch src/opencode-bot.js",
+    "dev:teams:opencode": "node --watch src/teams-opencode-bot.js",
+    "test": "node --test tests/*.test.js"
   },
   "keywords": [
     "claude",
+    "opencode",
     "slack",
+    "teams",
+    "microsoft",
     "cli",
-    "automation"
+    "automation",
+    "ai"
   ],
   "author": "Bobum",
   "license": "MIT",
   "dependencies": {
     "@slack/bolt": "^3.17.0",
-    "dotenv": "^17.2.3"
+    "botbuilder": "^4.23.1",
+    "dotenv": "^17.2.3",
+    "restify": "^11.1.0"
   }
 }

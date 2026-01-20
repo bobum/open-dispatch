@@ -1,0 +1,92 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.16",
+  "version": "1.0.0",
+  "id": "YOUR-MICROSOFT-APP-ID-HERE",
+  "packageName": "com.yourcompany.claudedispatch",
+  "developer": {
+    "name": "Your Company",
+    "websiteUrl": "https://github.com/bobum/claude-dispatch",
+    "privacyUrl": "https://github.com/bobum/claude-dispatch",
+    "termsOfUseUrl": "https://github.com/bobum/claude-dispatch"
+  },
+  "name": {
+    "short": "Claude Dispatch",
+    "full": "Claude Dispatch - Control Claude Code from Teams"
+  },
+  "description": {
+    "short": "Control Claude Code instances from Teams",
+    "full": "Claude Dispatch allows you to start, stop, and communicate with Claude Code instances directly from Microsoft Teams channels. Perfect for collaborative AI-assisted development. Start a Claude session in any channel and chat naturally - Claude remembers context across messages."
+  },
+  "icons": {
+    "outline": "outline.png",
+    "color": "color.png"
+  },
+  "accentColor": "#6B4C9A",
+  "bots": [
+    {
+      "botId": "YOUR-MICROSOFT-APP-ID-HERE",
+      "scopes": [
+        "team",
+        "personal",
+        "groupchat"
+      ],
+      "supportsFiles": false,
+      "isNotificationOnly": false,
+      "commandLists": [
+        {
+          "scopes": [
+            "team",
+            "groupchat"
+          ],
+          "commands": [
+            {
+              "title": "claude-start",
+              "description": "Start a Claude instance: claude-start <name> <project-path>"
+            },
+            {
+              "title": "claude-stop",
+              "description": "Stop a Claude instance: claude-stop <name>"
+            },
+            {
+              "title": "claude-list",
+              "description": "List all running Claude instances"
+            },
+            {
+              "title": "claude-send",
+              "description": "Send message to instance: claude-send <name> <message>"
+            }
+          ]
+        },
+        {
+          "scopes": [
+            "personal"
+          ],
+          "commands": [
+            {
+              "title": "claude-start",
+              "description": "Start a Claude instance: claude-start <name> <project-path>"
+            },
+            {
+              "title": "claude-stop",
+              "description": "Stop a Claude instance: claude-stop <name>"
+            },
+            {
+              "title": "claude-list",
+              "description": "List all running Claude instances"
+            },
+            {
+              "title": "claude-send",
+              "description": "Send message to instance: claude-send <name> <message>"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "permissions": [
+    "identity",
+    "messageTeamMembers"
+  ],
+  "validDomains": []
+}

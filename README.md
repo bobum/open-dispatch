@@ -1,6 +1,8 @@
 # Claude Dispatch
 
-Control Claude Code from Slack. Start coding sessions on your desktop and interact with them from your phone.
+Control Claude Code or OpenCode from Slack or Microsoft Teams. Start coding sessions on your desktop and interact with them from your phone.
+
+> **New in v2.1:** Microsoft Teams support + OpenCode integration! See [TEAMS_SETUP.md](./TEAMS_SETUP.md) for Teams setup or [OPENCODE_SETUP.md](./OPENCODE_SETUP.md) for OpenCode.
 
 ## Quick Start (AI-Assisted Setup)
 
@@ -17,14 +19,16 @@ The agent will walk you through each step interactively, create your config file
 
 ## What This Does
 
-- Start/stop Claude Code instances from Slack
-- Send messages to Claude from any device
+- Start/stop Claude Code or OpenCode instances from Slack
+- Send messages to AI from any device
 - Get responses back in Slack (no tool output noise)
 - Manage multiple project instances simultaneously
 - Maintain conversation context across messages
+- **OpenCode version**: Choose from 75+ AI providers (OpenAI, Anthropic, Google, local models, etc.)
 
 ## Architecture
 
+### Slack Mode (Socket Mode)
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Your Desktop                              │
@@ -52,6 +56,34 @@ The agent will walk you through each step interactively, create your config file
                               └─────────────────┘
 ```
 
+### Teams Mode (Bot Framework)
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Your Desktop                              │
+│                                                              │
+│  ┌──────────────┐      ┌──────────────────────────────────┐ │
+│  │ Claude Code  │◄────►│                                  │ │
+│  │ Instance 1   │      │       Claude Dispatch            │ │
+│  └──────────────┘      │           (Teams)                │ │
+│                        │                                  │ │
+│  ┌──────────────┐      │  - HTTP webhook server          │ │
+│  │ Claude Code  │◄────►│  - Adaptive Cards for UI        │ │
+│  │ Instance 2   │      │  - Routes Teams ↔ Claude        │ │
+│  └──────────────┘      └─────────────┬────────────────────┘ │
+│                                      │                      │
+└──────────────────────────────────────┼──────────────────────┘
+                                       │ HTTPS (ngrok/Azure)
+                                       ▼
+                              ┌─────────────────┐
+                              │ Azure Bot Svc   │
+                              └────────┬────────┘
+                                       │
+                                       ▼
+                              ┌─────────────────┐
+                              │ Microsoft Teams │
+                              └─────────────────┘
+```
+
 ---
 
 ## Prerequisites
@@ -59,13 +91,29 @@ The agent will walk you through each step interactively, create your config file
 Before starting, ensure you have:
 
 - [ ] Node.js 18+ installed
-- [ ] Claude Code CLI installed and authenticated (`claude --version` works)
+
+**For Slack:**
 - [ ] A Slack workspace where you can create apps
 - [ ] Admin or app-creation permissions in that workspace
 
+**For Teams:**
+- [ ] Microsoft 365 account with Teams access
+- [ ] Access to Teams Developer Portal (dev.teams.microsoft.com)
+- [ ] See [TEAMS_SETUP.md](./TEAMS_SETUP.md) for full Teams requirements
+
+**For Claude Code version:**
+- [ ] Claude Code CLI installed and authenticated (`claude --version` works)
+
+**For OpenCode version:**
+- [ ] OpenCode CLI installed (`opencode --version` works)
+- [ ] At least one AI provider configured (`opencode auth login`)
+- [ ] See [OPENCODE_SETUP.md](./OPENCODE_SETUP.md) for detailed setup
+
 ---
 
-## Setup Instructions
+## Setup Instructions (Slack)
+
+> **Using Teams instead?** See [TEAMS_SETUP.md](./TEAMS_SETUP.md) for Microsoft Teams setup.
 
 ### Step 1: Install Dependencies
 
@@ -271,6 +319,63 @@ Each message spawns a new Claude process and resumes the session. This takes 2-5
 4. Claude's response is parsed from stdout (stream-json format)
 5. Only text responses are forwarded to Slack (tool calls are filtered)
 6. Session persistence means Claude remembers the conversation
+
+---
+
+## Running Teams Bot
+
+For Microsoft Teams, use the Teams-specific entry point:
+
+```bash
+# Install dependencies (includes Teams SDK)
+npm install
+
+# Start Teams bot
+npm run start:teams
+```
+
+You'll also need ngrok for local development:
+```bash
+ngrok http 3978
+```
+
+Then update your Teams Developer Portal bot messaging endpoint with the ngrok URL.
+
+See [TEAMS_SETUP.md](./TEAMS_SETUP.md) for complete Teams setup instructions.
+
+---
+
+## Running OpenCode Version
+
+For OpenCode instead of Claude Code:
+
+```bash
+# Install dependencies
+npm install
+
+# Start OpenCode bot
+npm run start:opencode
+```
+
+The OpenCode version uses different slash commands to avoid conflicts:
+- `/opencode-start` instead of `/claude-start`
+- `/opencode-stop` instead of `/claude-stop`
+- `/opencode-list` instead of `/claude-list`
+- `/opencode-send` instead of `/claude-send`
+
+See [OPENCODE_SETUP.md](./OPENCODE_SETUP.md) for complete setup instructions.
+
+---
+
+## Choosing Between Claude Code and OpenCode
+
+| Feature | Claude Code | OpenCode |
+|---------|-------------|----------|
+| AI Providers | Anthropic only | 75+ (OpenAI, Anthropic, Google, etc.) |
+| Local Models | No | Yes (Ollama) |
+| Pricing | Claude pricing | Your chosen provider |
+| Session Storage | Claude's cache | Local SQLite |
+| Setup Complexity | Lower | Slightly higher |
 
 ---
 
