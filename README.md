@@ -4,7 +4,7 @@
 
 ### Control AI Coding Assistants from Anywhere
 
-**Slack** · **Microsoft Teams** · **75+ AI Providers** · **Works from Your Phone**
+**Slack** · **Microsoft Teams** · **Discord** · **75+ AI Providers** · **Works from Your Phone**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Node.js 18+](https://img.shields.io/badge/Node.js-18+-brightgreen.svg)](https://nodejs.org)
@@ -26,10 +26,10 @@
 
 ```yaml
 TASK: Help user set up Open Dispatch
-CONTEXT: Bridge app connecting chat platforms (Slack/Teams) to AI coding assistants (OpenCode/Claude)
+CONTEXT: Bridge app connecting chat platforms (Slack/Teams/Discord) to AI coding assistants (OpenCode/Claude)
 
 SETUP FLOW:
-1. Ask user: "Which chat platform? (Slack or Teams)"
+1. Ask user: "Which chat platform? (Slack, Teams, or Discord)"
 2. Ask user: "Which AI backend? (OpenCode for 75+ providers, or Claude Code)"
 3. Verify prerequisites are installed (see Prerequisites section)
 4. Guide through platform-specific setup (create app, get tokens)
@@ -38,10 +38,12 @@ SETUP FLOW:
 7. Test with /od-start command in chat
 
 KEY COMMANDS:
-- npm start                    → Slack + Claude Code
-- npm run start:opencode       → Slack + OpenCode (RECOMMENDED)
-- npm run start:teams          → Teams + Claude Code
-- npm run start:teams:opencode → Teams + OpenCode
+- npm start                      → Slack + Claude Code
+- npm run start:opencode         → Slack + OpenCode (RECOMMENDED)
+- npm run start:teams            → Teams + Claude Code
+- npm run start:teams:opencode   → Teams + OpenCode
+- npm run start:discord          → Discord + Claude Code
+- npm run start:discord:opencode → Discord + OpenCode
 
 SLASH COMMANDS (in chat):
 - /od-start <name> <path>  → Start instance
@@ -53,6 +55,7 @@ TROUBLESHOOTING:
 - "appToken" error → Missing SLACK_APP_TOKEN in .env
 - No response → Bot not invited to channel, or /od-start not run
 - "Instance not found" → Bot restarted, run /od-start again
+- Discord slash commands not showing → Wait up to 1 hour for global commands, or use DISCORD_GUILD_ID
 
 SUCCESS CRITERIA: User can /od-start an instance and send messages from their phone
 ```
@@ -65,11 +68,12 @@ SUCCESS CRITERIA: User can /od-start an instance and send messages from their ph
 |---------|-------------|
 | **📱 Mobile Control** | Start coding sessions on desktop, interact from your phone |
 | **🔌 75+ AI Providers** | OpenAI, Anthropic, Google, Groq, Ollama, Azure, AWS Bedrock... |
-| **💬 Slack & Teams** | Native support for both platforms with rich UI |
+| **💬 Slack, Teams & Discord** | Native support for all three platforms with rich UI |
+| **⚡ Real-time Streaming** | Responses stream to chat as they're generated |
 | **🔄 Session Persistence** | Conversation context maintained across messages |
 | **📦 Multi-Project** | Run multiple instances simultaneously |
 | **🎯 Smart Routing** | Messages route to correct project based on channel |
-| **🧹 Clean Output** | Only text responses—no tool call noise |
+| **🔌 Pluggable Architecture** | Easy to add new chat platforms via ChatProvider interface |
 
 ---
 
@@ -103,7 +107,7 @@ npm run start:opencode    # Slack + OpenCode (recommended)
 
 <table>
 <tr>
-<td width="50%" valign="top">
+<td width="33%" valign="top">
 
 ### 🟢 Slack + OpenCode
 **Best for most users**
@@ -118,7 +122,7 @@ npm run start:opencode
 📖 [OpenCode Setup](./OPENCODE_SETUP.md)
 
 </td>
-<td width="50%" valign="top">
+<td width="33%" valign="top">
 
 ### 🔵 Teams + OpenCode
 **For Microsoft shops**
@@ -130,6 +134,21 @@ npm run start:teams:opencode
 ```
 
 📖 [Full Teams Setup](./TEAMS_SETUP.md)
+📖 [OpenCode Setup](./OPENCODE_SETUP.md)
+
+</td>
+<td width="33%" valign="top">
+
+### 🟣 Discord + OpenCode
+**For Discord communities**
+
+Slash commands & embeds
+
+```bash
+npm run start:discord:opencode
+```
+
+📖 [Full Discord Setup](./DISCORD_SETUP.md)
 📖 [OpenCode Setup](./OPENCODE_SETUP.md)
 
 </td>
@@ -157,6 +176,18 @@ npm run start:teams
 ```
 
 📖 [Full Teams Setup](./TEAMS_SETUP.md)
+
+</td>
+<td valign="top">
+
+### ⚪ Discord + Claude Code
+**Anthropic-only, Discord UI**
+
+```bash
+npm run start:discord
+```
+
+📖 [Full Discord Setup](./DISCORD_SETUP.md)
 
 </td>
 </tr>
@@ -191,6 +222,11 @@ npm run start:teams
 - [ ] Microsoft 365 account with Teams
 - [ ] ngrok or Azure for webhook endpoint
 - [ ] See [TEAMS_SETUP.md](./TEAMS_SETUP.md)
+
+### For Discord
+
+- [ ] Discord account with server admin permissions
+- [ ] See [DISCORD_SETUP.md](./DISCORD_SETUP.md)
 
 ---
 
@@ -320,25 +356,49 @@ The AI responds in the same channel.
 │  │ Instance 1  │         │         OPEN DISPATCH              ││
 │  └─────────────┘         │                                    ││
 │                          │  • Spawns AI per message           ││
-│  ┌─────────────┐         │  • Maintains session context       ││
-│  │  OpenCode   │◄───────►│  • Filters to text responses       ││
+│  ┌─────────────┐         │  • Streams responses in real-time  ││
+│  │  OpenCode   │◄───────►│  • Maintains session context       ││
 │  │ Instance 2  │         │  • Routes chat ↔ AI                ││
 │  └─────────────┘         └──────────────┬─────────────────────┘│
 │                                         │                      │
 └─────────────────────────────────────────┼──────────────────────┘
                                           │
-                         Socket Mode (Slack) / HTTPS (Teams)
+                    Socket Mode (Slack) / HTTPS (Teams) / Gateway (Discord)
                                           │
                                           ▼
-                                 ┌─────────────────┐
-                                 │  Slack / Teams  │
-                                 └────────┬────────┘
+                              ┌───────────────────────┐
+                              │ Slack / Teams / Discord│
+                              └───────────┬───────────┘
                                           │
                                           ▼
                                  ┌─────────────────┐
                                  │   YOUR PHONE    │
                                  │   📱            │
                                  └─────────────────┘
+```
+
+### Provider Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Entry Points                           │
+├─────────────────────────────────────────────────────────────┤
+│  discord-bot.js │ discord-opencode-bot.js                   │
+│  bot.js         │ opencode-bot.js                           │
+│  teams-bot.js   │ teams-opencode-bot.js                     │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────┐
+│                      bot-engine.js                          │
+│  (Platform-agnostic command handling & message routing)     │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+┌───────▼───────┐   ┌────────▼────────┐  ┌───────▼───────┐
+│ SlackProvider │   │ DiscordProvider │  │ TeamsProvider │
+│  (@slack/bolt)│   │   (discord.js)  │  │  (botbuilder) │
+└───────────────┘   └─────────────────┘  └───────────────┘
 ```
 
 ### How It Works
@@ -421,18 +481,29 @@ OPENCODE_MODEL=anthropic/claude-sonnet-4-20250514
 ```
 open-dispatch/
 ├── src/
-│   ├── bot.js              # Slack + Claude Code
-│   ├── opencode-bot.js     # Slack + OpenCode
-│   ├── teams-bot.js        # Teams + Claude Code
-│   ├── teams-opencode-bot.js # Teams + OpenCode
-│   ├── claude-core.js      # Shared instance logic
-│   └── opencode-core.js    # OpenCode-specific logic
+│   ├── providers/
+│   │   ├── chat-provider.js    # Base ChatProvider interface
+│   │   ├── slack-provider.js   # Slack implementation
+│   │   ├── teams-provider.js   # Teams implementation
+│   │   ├── discord-provider.js # Discord implementation
+│   │   └── index.js            # Provider exports
+│   ├── bot-engine.js           # Platform-agnostic bot logic
+│   ├── bot.js                  # Slack + Claude Code
+│   ├── opencode-bot.js         # Slack + OpenCode
+│   ├── teams-bot.js            # Teams + Claude Code
+│   ├── teams-opencode-bot.js   # Teams + OpenCode
+│   ├── discord-bot.js          # Discord + Claude Code
+│   ├── discord-opencode-bot.js # Discord + OpenCode
+│   ├── claude-core.js          # Claude CLI integration
+│   └── opencode-core.js        # OpenCode CLI integration
 ├── tests/
-│   └── opencode-core.test.js  # 40+ tests
-├── teams-manifest/         # Teams app manifest
-├── .env.example           # Config template
-├── OPENCODE_SETUP.md      # OpenCode guide
-├── TEAMS_SETUP.md         # Teams guide
+│   ├── opencode-core.test.js   # Core logic tests
+│   └── chat-provider.test.js   # Provider architecture tests
+├── teams-manifest/             # Teams app manifest
+├── .env.example               # Config template
+├── OPENCODE_SETUP.md          # OpenCode guide
+├── TEAMS_SETUP.md             # Teams guide
+├── DISCORD_SETUP.md           # Discord guide
 └── package.json
 ```
 
@@ -444,11 +515,13 @@ open-dispatch/
 npm test
 ```
 
-40+ tests covering:
+63 tests covering:
 - Instance lifecycle
 - Output parsing (JSON, ndjson, plaintext)
 - Message chunking
 - Error handling
+- Provider architecture
+- Event handling
 
 ---
 
