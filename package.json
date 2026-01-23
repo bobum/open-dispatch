@@ -1,17 +1,21 @@
 {
   "name": "claude-dispatch",
-  "version": "2.1.0",
-  "description": "Manage and communicate with Claude Code or OpenCode instances via Slack or Microsoft Teams",
+  "version": "2.2.0",
+  "description": "Manage and communicate with Claude Code or OpenCode instances via Slack, Microsoft Teams, or Discord",
   "main": "src/bot.js",
   "scripts": {
     "start": "node src/bot.js",
     "start:teams": "node src/teams-bot.js",
+    "start:discord": "node src/discord-bot.js",
     "start:opencode": "node src/opencode-bot.js",
     "start:teams:opencode": "node src/teams-opencode-bot.js",
+    "start:discord:opencode": "node src/discord-opencode-bot.js",
     "dev": "node --watch src/bot.js",
     "dev:teams": "node --watch src/teams-bot.js",
+    "dev:discord": "node --watch src/discord-bot.js",
     "dev:opencode": "node --watch src/opencode-bot.js",
     "dev:teams:opencode": "node --watch src/teams-opencode-bot.js",
+    "dev:discord:opencode": "node --watch src/discord-opencode-bot.js",
     "test": "node --test tests/*.test.js"
   },
   "keywords": [
@@ -19,6 +23,7 @@
     "opencode",
     "slack",
     "teams",
+    "discord",
     "microsoft",
     "cli",
     "automation",
@@ -29,6 +34,7 @@
   "dependencies": {
     "@slack/bolt": "^3.17.0",
     "botbuilder": "^4.23.1",
+    "discord.js": "^14.14.1",
     "dotenv": "^17.2.3",
     "restify": "^11.1.0"
   }
