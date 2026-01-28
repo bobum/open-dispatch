@@ -245,13 +245,13 @@ app.message(async ({ message, say }) => {
   }
 });
 
-// Slash command: /claude-start <instanceId> <projectDir>
-app.command('/claude-start', async ({ command, ack, respond }) => {
+// Slash command: /od-start <instanceId> <projectDir>
+app.command('/od-start', async ({ command, ack, respond }) => {
   await ack();
 
   const parts = command.text.trim().split(/\s+/);
   if (parts.length < 2) {
-    await respond('Usage: `/claude-start <instance-name> <project-directory>`');
+    await respond('Usage: `/od-start <instance-name> <project-directory>`');
     return;
   }
 
@@ -267,13 +267,13 @@ app.command('/claude-start', async ({ command, ack, respond }) => {
   }
 });
 
-// Slash command: /claude-stop <instanceId>
-app.command('/claude-stop', async ({ command, ack, respond }) => {
+// Slash command: /od-stop <instanceId>
+app.command('/od-stop', async ({ command, ack, respond }) => {
   await ack();
 
   const instanceId = command.text.trim();
   if (!instanceId) {
-    await respond('Usage: `/claude-stop <instance-name>`');
+    await respond('Usage: `/od-stop <instance-name>`');
     return;
   }
 
@@ -286,8 +286,8 @@ app.command('/claude-stop', async ({ command, ack, respond }) => {
   }
 });
 
-// Slash command: /claude-list
-app.command('/claude-list', async ({ ack, respond }) => {
+// Slash command: /od-list
+app.command('/od-list', async ({ ack, respond }) => {
   await ack();
 
   if (instances.size === 0) {
@@ -304,13 +304,13 @@ app.command('/claude-list', async ({ ack, respond }) => {
   await respond(`*Running instances:*\n${lines.join('\n')}`);
 });
 
-// Slash command: /claude-send <instanceId> <message>
-app.command('/claude-send', async ({ command, ack, respond }) => {
+// Slash command: /od-send <instanceId> <message>
+app.command('/od-send', async ({ command, ack, respond }) => {
   await ack();
 
   const match = command.text.match(/^(\S+)\s+(.+)$/s);
   if (!match) {
-    await respond('Usage: `/claude-send <instance-name> <message>`');
+    await respond('Usage: `/od-send <instance-name> <message>`');
     return;
   }
 
