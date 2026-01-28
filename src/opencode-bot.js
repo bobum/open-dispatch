@@ -319,13 +319,13 @@ app.message(async ({ message, say }) => {
   }
 });
 
-// Slash command: /opencode-start <instanceId> <projectDir>
-app.command('/opencode-start', async ({ command, ack, respond }) => {
+// Slash command: /od-start <instanceId> <projectDir>
+app.command('/od-start', async ({ command, ack, respond }) => {
   await ack();
 
   const parts = command.text.trim().split(/\s+/);
   if (parts.length < 2) {
-    await respond('Usage: `/opencode-start <instance-name> <project-directory>`');
+    await respond('Usage: `/od-start <instance-name> <project-directory>`');
     return;
   }
 
@@ -342,13 +342,13 @@ app.command('/opencode-start', async ({ command, ack, respond }) => {
   }
 });
 
-// Slash command: /opencode-stop <instanceId>
-app.command('/opencode-stop', async ({ command, ack, respond }) => {
+// Slash command: /od-stop <instanceId>
+app.command('/od-stop', async ({ command, ack, respond }) => {
   await ack();
 
   const instanceId = command.text.trim();
   if (!instanceId) {
-    await respond('Usage: `/opencode-stop <instance-name>`');
+    await respond('Usage: `/od-stop <instance-name>`');
     return;
   }
 
@@ -361,8 +361,8 @@ app.command('/opencode-stop', async ({ command, ack, respond }) => {
   }
 });
 
-// Slash command: /opencode-list
-app.command('/opencode-list', async ({ ack, respond }) => {
+// Slash command: /od-list
+app.command('/od-list', async ({ ack, respond }) => {
   await ack();
 
   if (instances.size === 0) {
@@ -379,13 +379,13 @@ app.command('/opencode-list', async ({ ack, respond }) => {
   await respond(`*Running OpenCode instances:*\n${lines.join('\n')}`);
 });
 
-// Slash command: /opencode-send <instanceId> <message>
-app.command('/opencode-send', async ({ command, ack, respond }) => {
+// Slash command: /od-send <instanceId> <message>
+app.command('/od-send', async ({ command, ack, respond }) => {
   await ack();
 
   const match = command.text.match(/^(\S+)\s+(.+)$/s);
   if (!match) {
-    await respond('Usage: `/opencode-send <instance-name> <message>`');
+    await respond('Usage: `/od-send <instance-name> <message>`');
     return;
   }
 
