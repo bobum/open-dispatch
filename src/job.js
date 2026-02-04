@@ -31,8 +31,9 @@ class Job {
    * @param {string} params.slackChannel - Slack channel ID for results
    * @param {string} [params.projectDir] - Project directory path (optional, for local context)
    * @param {string} [params.userId] - User who initiated the job
+   * @param {string} [params.image] - Docker image to use for this job (overrides default)
    */
-  constructor({ jobId, repo, branch, command, slackChannel, projectDir, userId }) {
+  constructor({ jobId, repo, branch, command, slackChannel, projectDir, userId, image }) {
     this.jobId = jobId || randomUUID();
     this.repo = repo;
     this.branch = branch || 'main';
@@ -40,6 +41,7 @@ class Job {
     this.slackChannel = slackChannel;
     this.projectDir = projectDir || null;
     this.userId = userId || null;
+    this.image = image || null;
     this.status = JobStatus.QUEUED;
     this.logs = [];
     this.artifacts = [];
@@ -152,6 +154,7 @@ class Job {
       slackChannel: this.slackChannel,
       projectDir: this.projectDir,
       userId: this.userId,
+      image: this.image,
       status: this.status,
       logs: this.logs,
       artifacts: this.artifacts,
@@ -177,7 +180,8 @@ class Job {
       command: json.command,
       slackChannel: json.slackChannel,
       projectDir: json.projectDir,
-      userId: json.userId
+      userId: json.userId,
+      image: json.image
     });
     job.status = json.status;
     job.logs = json.logs || [];

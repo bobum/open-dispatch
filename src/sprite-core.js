@@ -150,6 +150,7 @@ function createInstanceManager(options = {}) {
    * @param {Function} [options.onMessage] - Callback for streaming messages
    * @param {string} [options.repo] - Repository URL (overrides projectDir)
    * @param {string} [options.branch] - Branch name
+   * @param {string} [options.image] - Docker image to use for this job
    * @returns {Promise<Object>} Result with success, responses, jobId
    */
   async function sendToInstance(instanceId, message, options = {}) {
@@ -158,7 +159,7 @@ function createInstanceManager(options = {}) {
       return { success: false, error: `Instance "${instanceId}" not found` };
     }
 
-    const { onMessage, repo, branch = 'main' } = options;
+    const { onMessage, repo, branch = 'main', image } = options;
     instance.messageCount++;
 
     // Build the agent command based on type
@@ -170,7 +171,8 @@ function createInstanceManager(options = {}) {
       branch,
       command: agentCommand,
       slackChannel: instance.channel,
-      projectDir: instance.projectDir
+      projectDir: instance.projectDir,
+      image
     });
 
     jobs.set(job.jobId, job);

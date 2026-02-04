@@ -47,6 +47,9 @@ class SpriteOrchestrator extends EventEmitter {
   async spawnJob(job, options = {}) {
     const { timeoutMs = 600000, env = {} } = options;
 
+    // Use job-specific image if provided, otherwise fall back to default
+    const image = job.image || this.baseImage;
+
     const command = this._buildCommand(job);
     const spriteEnv = {
       JOB_ID: job.jobId,
@@ -65,7 +68,7 @@ class SpriteOrchestrator extends EventEmitter {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          image: this.baseImage,
+          image: image,
           command: command,
           env: spriteEnv,
           region: this.region,
