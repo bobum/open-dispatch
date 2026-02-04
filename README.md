@@ -401,7 +401,7 @@ The AI responds in the same channel.
 └───────────────┘   └─────────────────┘  └───────────────┘
 ```
 
-### How It Works
+### How It Works (Local Mode)
 
 1. **Start**: `/od-start` creates a session ID and binds channel → project
 2. **Message**: Your chat message is sent to Open Dispatch
@@ -409,6 +409,45 @@ The AI responds in the same channel.
 4. **Process**: AI processes your message with full conversation context
 5. **Filter**: Tool calls are filtered out, only text responses returned
 6. **Reply**: Clean response appears in your chat
+
+### Sprite Architecture (Cloud Mode)
+
+For scalable, isolated execution, Open Dispatch supports **Sprites**—ephemeral micro-VMs that run agents in clean environments:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       CLOUD DEPLOYMENT                          │
+│                                                                 │
+│  ┌────────────────────────────────────────────────────────────┐│
+│  │              OPEN DISPATCH (Orchestrator)                   ││
+│  │                                                            ││
+│  │  • Receives commands from Slack/Teams/Discord              ││
+│  │  • Creates Jobs with unique IDs                            ││
+│  │  • Spawns Sprites via API                                  ││
+│  │  • Streams logs back to chat                               ││
+│  │  • Collects artifacts (screenshots, videos, logs)          ││
+│  └────────────────────────────┬───────────────────────────────┘│
+│                               │                                 │
+│       ┌───────────────────────┼───────────────────────┐        │
+│       │                       │                       │        │
+│  ┌────▼─────┐           ┌─────▼────┐           ┌─────▼────┐   │
+│  │ Sprite 1 │           │ Sprite 2 │           │ Sprite 3 │   │
+│  │ (Job A)  │           │ (Job B)  │           │ (Job C)  │   │
+│  │ isolated │           │ isolated │           │ isolated │   │
+│  └──────────┘           └──────────┘           └──────────┘   │
+│                                                                 │
+│  Sprites: Ephemeral micro-VMs on Fly.io                        │
+│  • Auto-sleep when idle (usage-based billing)                  │
+│  • Clean environment per job                                   │
+│  • Runs Playwright tests, AI agents, etc.                      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Benefits of Sprites:**
+- **Isolation**: Each job runs in its own VM—no state pollution
+- **Scalability**: Trivial to run parallel jobs
+- **Cost**: Pay only for compute used (auto-sleep when idle)
+- **Clean environments**: No dependency conflicts between jobs
 
 ---
 
@@ -495,7 +534,10 @@ open-dispatch/
 │   ├── discord-bot.js          # Discord + Claude Code
 │   ├── discord-opencode-bot.js # Discord + OpenCode
 │   ├── claude-core.js          # Claude CLI integration
-│   └── opencode-core.js        # OpenCode CLI integration
+│   ├── opencode-core.js        # OpenCode CLI integration
+│   ├── sprite-core.js          # Sprite (ephemeral VM) integration
+│   ├── sprite-orchestrator.js  # Sprite API orchestration
+│   └── job.js                  # Job tracking for Sprite executions
 ├── tests/
 │   ├── opencode-core.test.js   # Core logic tests
 │   └── chat-provider.test.js   # Provider architecture tests
