@@ -14,7 +14,7 @@
 
 *Start a coding session on your desktop. Guide it from your phone.*
 
-[Quick Start](#-quick-start) · [Features](#-features) · [Setup](#-setup-choose-your-path) · [Commands](#-commands) · [Architecture](#-architecture)
+[Quick Start](#-quick-start) · [Deployment Modes](#-deployment-modes) · [Features](#-features) · [Setup](#-setup-choose-your-path) · [Commands](#-commands) · [Architecture](#-architecture)
 
 </div>
 
@@ -27,27 +27,33 @@
 ```yaml
 TASK: Help user set up Open Dispatch
 CONTEXT: Bridge app connecting chat platforms (Slack/Teams/Discord) to AI coding assistants (OpenCode/Claude)
-         Supports LOCAL mode (agents run on user's machine) and CLOUD mode (agents run in Sprites on Fly.io)
+         Two deployment modes — LOCAL (Node.js server, agents on user's machine) or SPRITE (container on Fly.io, agents in cloud VMs)
+         These modes are mutually exclusive per deployment. Do NOT try to mix them.
 
 SETUP FLOW:
-1. Ask user: "Which chat platform? (Slack, Teams, or Discord)"
-2. Ask user: "Which execution mode? (Local for desktop, or Sprites for cloud VMs)"
-3. Ask user: "Which AI backend? (OpenCode for 75+ providers, or Claude Code)"
+1. Ask user: "Which deployment mode?"
+   - LOCAL MODE: Agents run on your machine. Install with npm, run as Node.js server.
+   - SPRITE MODE: Agents run in cloud VMs on Fly.io. Deploy OD as container, agents in Sprites.
+2. Ask user: "Which chat platform? (Slack, Teams, or Discord)"
+3. For LOCAL: Ask "Which AI backend? (OpenCode for 75+ providers, or Claude Code)"
 4. Verify prerequisites are installed (see Prerequisites section)
 5. Guide through platform-specific setup (create app, get tokens)
-6. For Sprites: Guide through Fly.io setup (see SPRITE_SETUP.md)
-7. Create .env file with collected credentials
+6. For SPRITES: Guide through Fly.io setup (see SPRITE_SETUP.md)
+7. Create .env file with collected credentials (LOCAL) or set Fly secrets (SPRITE)
 8. Run appropriate start command
-9. Test with /od-start or /od-run command in chat
+9. Test with /od-start (LOCAL) or /od-run (SPRITE)
 
-KEY COMMANDS:
-- npm start                      → Slack + Claude Code (local)
-- npm run start:opencode         → Slack + OpenCode (local, RECOMMENDED)
-- npm run start:teams            → Teams + Claude Code (local)
-- npm run start:teams:opencode   → Teams + OpenCode (local)
-- npm run start:discord          → Discord + Claude Code (local)
-- npm run start:discord:opencode → Discord + OpenCode (local)
-- npm run start:sprite           → Any provider + Sprite cloud VMs (set CHAT_PROVIDER)
+KEY COMMANDS - LOCAL MODE (Node.js on user's machine):
+- npm start                      → Slack + Claude Code
+- npm run start:opencode         → Slack + OpenCode (RECOMMENDED)
+- npm run start:teams            → Teams + Claude Code
+- npm run start:teams:opencode   → Teams + OpenCode
+- npm run start:discord          → Discord + Claude Code
+- npm run start:discord:opencode → Discord + OpenCode
+
+KEY COMMANDS - SPRITE MODE (container on Fly.io):
+- npm run start:sprite           → Any provider (set CHAT_PROVIDER=slack|teams|discord)
+- fly deploy                     → Deploy to Fly.io
 
 SLASH COMMANDS (in chat):
 LOCAL MODE:
@@ -56,24 +62,112 @@ LOCAL MODE:
 - /od-list                 → List instances
 - /od-send <name> <msg>    → Send to specific instance
 
-SPRITE MODE (cloud VMs):
+SPRITE MODE:
 - /od-run [options] <task> → One-shot: spawn VM, run task, terminate
   Options: --repo <url>, --branch <name>, --image <docker-image>
 - /od-start <name> --repo <url> --persistent → Persistent VM session
 - /od-jobs                 → List recent Sprite jobs
 
 TROUBLESHOOTING:
+LOCAL MODE:
 - "appToken" error → Missing SLACK_APP_TOKEN in .env
 - No response → Bot not invited to channel, or /od-start not run
 - "Instance not found" → Bot restarted, run /od-start again
 - Discord slash commands not showing → Wait up to 1 hour for global commands
-- "No API token" for Sprites → Set FLY_API_TOKEN (Fly.io token)
+SPRITE MODE:
+- "Missing required env vars" → Set FLY_API_TOKEN, FLY_SPRITE_APP, SPRITE_IMAGE, CHAT_PROVIDER
 - Sprite spawn failed → Check image exists, Fly.io token valid
+- No output streaming → Check webhook health, ensure same Fly.io org for 6PN networking
 
 SUCCESS CRITERIA:
 - Local: User can /od-start and send messages from phone
-- Sprites: User can /od-run a task and see streamed results
+- Sprites: User can /od-run a task and see streamed results in chat
 ```
+
+---
+
+## 🔀 Deployment Modes
+
+Open Dispatch has **two deployment modes**. Choose the one that fits your workflow — they use the same codebase but serve different use cases.
+
+### Local Mode — Node.js on your machine
+
+**For:** Individual developers who want to control AI agents running on their own desktop/laptop/VM from chat while AFK.
+
+```
+YOU (laptop/desktop/VM)
+┌────────────────────────────────────────────────┐
+│                                                │
+│  Open Dispatch          Claude Code / OpenCode │
+│  (Node.js server)  ───► (local CLI processes)  │
+│       │                                        │
+└───────┼────────────────────────────────────────┘
+        │ Socket Mode / HTTPS / Gateway
+        ▼
+  Slack / Teams / Discord
+        │
+        ▼
+     Your Phone 📱
+```
+
+- Install with `npm install` — no Docker, no Fly.io, no cloud account needed
+- Agents run as local processes with full access to your filesystem
+- Perfect for: "start a coding session, go grab lunch, guide it from your phone"
+
+```bash
+npm install
+npm run start:opencode    # or: npm start, npm run start:teams, etc.
+```
+
+### Sprite Mode — Deployed to Fly.io
+
+**For:** Teams and platforms that need isolated, parallel cloud execution — spin up multiple AI agents in ephemeral VMs to tackle tasks concurrently.
+
+```
+Fly.io Private Network (6PN)
+┌────────────────────────────────────────────────┐
+│                                                │
+│  Open Dispatch (container)                     │
+│  ┌─────────────────┐  ┌────────────────────┐   │
+│  │ Bot Engine       │  │ Webhook Server     │   │
+│  │ (chat ↔ jobs)    │  │ (:8080)            │   │
+│  └────────┬────────┘  └────────▲───────────┘   │
+│           │                    │                │
+│     ┌─────┼────────────────────┤                │
+│     │     │                    │                │
+│  ┌──▼──┐ ┌▼────┐ ┌─────┐     │                │
+│  │Sprite│ │Sprite│ │Sprite│ ───┘ (webhooks)    │
+│  │Job A │ │Job B │ │Job C │                     │
+│  └──────┘ └─────┘ └─────┘                      │
+│  (ephemeral Fly Machines)                       │
+└────────────────────────────────────────────────┘
+         │
+   Slack / Teams / Discord
+```
+
+- Open Dispatch runs as a **container on Fly.io** alongside the Sprites it orchestrates
+- Sprites are ephemeral Fly Machines — each job gets a clean VM, auto-destroyed on completion
+- Agents stream output back to chat in real-time via HTTP webhooks over Fly.io's private network
+- Perfect for: CI/CD, parallel test runs, team-wide coding automation
+
+```bash
+fly deploy                # Deploy OD to Fly.io
+npm run start:sprite      # Or run locally for development
+```
+
+### Which mode should I use?
+
+| | Local Mode | Sprite Mode |
+|---|---|---|
+| **Install** | `npm install` on any machine | `fly deploy` to Fly.io |
+| **Agents run** | As local CLI processes | In ephemeral cloud VMs |
+| **Filesystem** | Full access to your local files | Clones repos from GitHub |
+| **Parallelism** | Limited by your machine | Spin up as many Sprites as needed |
+| **Cost** | Free (your hardware) | Fly.io usage-based billing |
+| **Best for** | Solo dev, AFK coding | Teams, CI/CD, parallel execution |
+| **Requires** | Node.js 18+, AI CLI installed | Fly.io account, Docker image |
+
+> **Important:** These modes are mutually exclusive per deployment. Local mode runs agents on your machine. Sprite mode runs agents in cloud VMs. You cannot mix them in a single instance — but you can run both separately if needed.
 
 ---
 
@@ -244,6 +338,14 @@ npm run start:discord
 
 - [ ] Discord account with server admin permissions
 - [ ] See [DISCORD_SETUP.md](./DISCORD_SETUP.md)
+
+### For Sprite Mode (in addition to chat platform prerequisites)
+
+- [ ] [Fly.io](https://fly.io) account
+- [ ] Fly CLI installed — `fly version`
+- [ ] Fly app created for Sprites — `fly apps create my-sprites`
+- [ ] Docker image built with sidecar installed — see [SPRITE_SETUP.md](./SPRITE_SETUP.md)
+- [ ] Fly API token — `fly tokens create deploy -x 999999h`
 
 ---
 
@@ -444,49 +546,65 @@ The AI responds in the same channel.
 
 ### Sprite Architecture (Cloud Mode)
 
-For scalable, isolated execution, Open Dispatch supports **Sprites**—ephemeral micro-VMs that run agents in clean environments:
+For scalable, isolated execution, Open Dispatch supports **Sprites** — ephemeral Fly Machines that run agents in clean environments. Output streams back via HTTP webhooks over Fly.io's private network (6PN).
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                       CLOUD DEPLOYMENT                          │
-│                                                                 │
-│  ┌────────────────────────────────────────────────────────────┐│
-│  │              OPEN DISPATCH (Orchestrator)                   ││
-│  │                                                            ││
-│  │  • Receives commands from Slack/Teams/Discord              ││
-│  │  • Creates Jobs with unique IDs                            ││
-│  │  • Spawns Sprites via API                                  ││
-│  │  • Streams logs back to chat                               ││
-│  │  • Collects artifacts (screenshots, videos, logs)          ││
-│  └────────────────────────────┬───────────────────────────────┘│
-│                               │                                 │
-│       ┌───────────────────────┼───────────────────────┐        │
-│       │                       │                       │        │
-│  ┌────▼─────┐           ┌─────▼────┐           ┌─────▼────┐   │
-│  │ Sprite 1 │           │ Sprite 2 │           │ Sprite 3 │   │
-│  │ (Job A)  │           │ (Job B)  │           │ (Job C)  │   │
-│  │ isolated │           │ isolated │           │ isolated │   │
-│  └──────────┘           └──────────┘           └──────────┘   │
-│                                                                 │
-│  Sprites: Ephemeral micro-VMs on Fly.io                        │
-│  • Auto-sleep when idle (usage-based billing)                  │
-│  • Clean environment per job                                   │
-│  • Runs Playwright tests, AI agents, etc.                      │
-└─────────────────────────────────────────────────────────────────┘
+Fly.io Private Network (6PN / WireGuard mesh)
+┌────────────────────────────────────────────────────────────────┐
+│                                                                │
+│  OPEN DISPATCH (open-dispatch.internal)                        │
+│  ┌──────────────────┐  ┌───────────────────────────────────┐   │
+│  │ bot-engine.js     │  │ Webhook Server (:8080)            │   │
+│  │                   │  │                                   │   │
+│  │ onMessage() ◄─────┼──│ POST /webhooks/logs    ← output  │   │
+│  │ (streams to chat) │  │ POST /webhooks/status  ← done    │   │
+│  │                   │  │ POST /webhooks/artifacts← PRs etc│   │
+│  └──────┬───────────┘  │ GET  /health                      │   │
+│         │               └───────────────▲──────────────────┘   │
+│         ▼                               │                      │
+│  Slack / Teams / Discord                │ HTTP (private net)   │
+│                                         │                      │
+│  SPRITE MACHINES (ephemeral)            │                      │
+│  ┌──────────────────────────────────────┼───┐                  │
+│  │ sprite-reporter (sidecar)            │   │                  │
+│  │  1. git clone repo                   │   │                  │
+│  │  2. Run agent (claude / opencode)    │   │                  │
+│  │  3. stdout → POST /webhooks/logs ────┘   │                  │
+│  │  4. On exit → POST /webhooks/status      │                  │
+│  │  5. PRs/artifacts → POST /webhooks/artifacts                │
+│  └──────────────────────────────────────────┘                  │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
 ```
+
+**How Sprite execution works:**
+1. User runs `/od-run --repo owner/project "run the tests"` in chat
+2. Open Dispatch creates a Job with a unique ID and per-job auth token
+3. Sprite Orchestrator spawns a Fly Machine via the [Machines API](https://fly.io/docs/machines/api/)
+4. The Sprite's sidecar (`sprite-reporter`) clones the repo and runs the agent
+5. Agent output streams back to Open Dispatch via `/webhooks/logs` (buffered, batched)
+6. Open Dispatch relays each chunk to the chat channel in real-time
+7. When done, Sprite POSTs to `/webhooks/status` — the job Promise resolves
+8. Sprite auto-destroys; artifacts (PR URLs, test logs) are delivered to chat
 
 **Benefits of Sprites:**
-- **Isolation**: Each job runs in its own VM—no state pollution
-- **Scalability**: Trivial to run parallel jobs
-- **Cost**: Pay only for compute used (auto-sleep when idle)
-- **Clean environments**: No dependency conflicts between jobs
+- **Isolation**: Each job runs in its own VM — no state pollution
+- **Scalability**: Spin up as many parallel jobs as needed
+- **Cost**: Usage-based billing, Machines auto-destroy when done
+- **Security**: Per-job auth tokens, private network communication, no shared secrets
+- **Clean environments**: Fresh clone, no dependency conflicts between jobs
+
+📖 **Full setup guide:** [SPRITE_SETUP.md](./SPRITE_SETUP.md)
 
 ---
 
-## ⚡ Running as a Service
+## ⚡ Deployment
 
-### PM2 (Recommended)
+### Local Mode: Running as a Service
 
+For local mode, Open Dispatch is just a Node.js server. Keep it running in the background:
+
+**PM2 (Recommended)**
 ```bash
 npm install -g pm2
 pm2 start src/opencode-bot.js --name open-dispatch
@@ -494,35 +612,164 @@ pm2 save
 pm2 startup
 ```
 
-### Windows Task Scheduler
+**systemd (Linux)**
+```ini
+# /etc/systemd/system/open-dispatch.service
+[Unit]
+Description=Open Dispatch
+After=network.target
 
-Create task running at login:
+[Service]
+Type=simple
+User=youruser
+WorkingDirectory=/path/to/open-dispatch
+ExecStart=/usr/bin/node src/opencode-bot.js
+Restart=on-failure
+EnvironmentFile=/path/to/open-dispatch/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Windows Task Scheduler**
 ```
 node C:\path\to\open-dispatch\src\opencode-bot.js
 ```
 
-### Docker
+### Sprite Mode: Deploying to Fly.io
+
+Sprite mode requires Open Dispatch to run on Fly.io so Sprites can reach it over the private network. The included `Dockerfile` and `fly.toml` handle this.
+
+**Step 1: Create the Fly app**
+```bash
+cd open-dispatch
+fly auth login
+fly launch --no-deploy    # Creates app, review fly.toml
+```
+
+**Step 2: Set secrets**
+
+These are stored encrypted by Fly.io and injected as env vars at runtime. Never commit them to `.env` in the container.
+
+```bash
+# Chat provider credentials (pick your platform)
+fly secrets set CHAT_PROVIDER=slack
+fly secrets set SLACK_BOT_TOKEN=xoxb-your-token
+fly secrets set SLACK_SIGNING_SECRET=your-secret
+fly secrets set SLACK_APP_TOKEN=xapp-your-token
+
+# Fly.io Sprite config
+fly secrets set FLY_API_TOKEN=$(fly tokens create deploy -x 999999h)
+fly secrets set FLY_SPRITE_APP=your-sprite-app-name
+fly secrets set SPRITE_IMAGE=registry.fly.io/your-app/agent:latest
+
+# Passed through to Sprites for agent use
+fly secrets set GH_TOKEN=your-github-token
+fly secrets set ANTHROPIC_API_KEY=your-anthropic-key
+```
+
+**Step 3: Update fly.toml for Sprite mode**
+
+The default `fly.toml` runs `bot.js` (local mode). For Sprite mode, you need to change the entry point and expose the webhook port:
+
+```toml
+app = "open-dispatch"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+
+# Health check on the webhook server
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+```
+
+And override the Dockerfile CMD:
+```toml
+[processes]
+  app = "node src/sprite-bot.js"
+```
+
+**Step 4: Deploy**
+```bash
+fly deploy
+```
+
+**Step 5: Verify**
+```bash
+# Check OD is healthy
+fly status
+fly logs
+
+# Test webhook server
+fly ssh console -C "curl -s http://localhost:8080/health"
+```
+
+**Step 6: Build your Sprite agent image**
+
+Sprites need a Docker image with your AI tools and the Open-Dispatch sidecar installed.
+See [SPRITE_SETUP.md](./SPRITE_SETUP.md) for full instructions.
 
 ```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --production
-COPY . .
-CMD ["npm", "run", "start:opencode"]
+# Pull sidecar scripts from Open-Dispatch
+FROM ghcr.io/bobum/open-dispatch/sidecar:latest AS sidecar
+
+# Your agent base image
+FROM node:22-bookworm
+COPY --from=sidecar /sidecar/ /usr/local/bin/
+RUN npm install -g @anthropic-ai/claude-code
+RUN apt-get update && apt-get install -y git curl jq && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+ENTRYPOINT ["/usr/local/bin/sprite-reporter"]
 ```
+
+```bash
+# Build and push to Fly registry
+fly auth docker
+docker build -t registry.fly.io/your-sprite-app/agent:latest .
+docker push registry.fly.io/your-sprite-app/agent:latest
+```
+
+**That's it.** Run `/od-run --repo owner/project "run the tests"` in chat and watch output stream back in real-time.
 
 ---
 
 ## 🔍 Troubleshooting
+
+### Local Mode
 
 | Problem | Solution |
 |---------|----------|
 | `"You must provide an appToken"` | Check `.env` has `SLACK_APP_TOKEN` starting with `xapp-` |
 | Bot doesn't respond | 1) Invite bot to channel 2) Run `/od-start` in that channel |
 | `"Instance not found"` | Bot was restarted. Run `/od-start` again |
-| Slow responses | Normal—each message spawns process. ~2-5 sec |
+| Slow responses | Normal — each message spawns a process. ~2-5 sec |
 | Teams webhook fails | Check ngrok is running and URL updated in Dev Portal |
+| `/od-run` says "requires Sprite backend" | You're in local mode. Use `/od-start` instead, or switch to Sprite mode |
+
+### Sprite Mode
+
+| Problem | Solution |
+|---------|----------|
+| `"Missing required env vars"` | Set `CHAT_PROVIDER`, `FLY_API_TOKEN`, `FLY_SPRITE_APP`, `SPRITE_IMAGE` |
+| "Failed to spawn Sprite" | Check Fly token (`fly auth whoami`), image exists, region available |
+| Sprite output not appearing in chat | Check webhook health: `curl http://open-dispatch.internal:8080/health` |
+| Sprites can't reach Open Dispatch | Both apps must be in the same Fly.io org (6PN requires same org) |
+| Job timed out | Default timeout is 10 min. Check if agent command is hanging. See Fly logs: `fly logs -a your-sprite-app` |
+| Auth errors on webhooks | Job tokens are per-job HMAC tokens. Check sidecar has `JOB_TOKEN` env var |
 
 ---
 
