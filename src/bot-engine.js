@@ -38,6 +38,75 @@ function createBotEngine(options) {
   }
 
   // ============================================
+  // MESSAGE BATCHER (rate-limit protection)
+  // ============================================
+
+  /**
+   * Create a message batcher that buffers output and flushes as
+   * code-block messages. Prevents hitting chat API rate limits.
+   * @param {string} channelId
+   * @returns {Object} { push(text), flush(), destroy() }
+   */
+  function createMessageBatcher(channelId) {
+    const buffer = [];
+    let flushTimer = null;
+    let destroyed = false;
+    let lastSendTime = 0;
+    const MIN_SEND_INTERVAL = 200; // ms between chat API calls
+    const FLUSH_DELAY = 500; // buffer for 500ms
+    const MAX_LINES = 5; // or 5 lines, whichever first
+
+    function scheduleFlush() {
+      if (flushTimer || destroyed) return;
+      flushTimer = setTimeout(() => {
+        flushTimer = null;
+        flush();
+      }, FLUSH_DELAY);
+    }
+
+    async function flush() {
+      if (buffer.length === 0 || destroyed) return;
+
+      const text = buffer.splice(0).join('\n');
+      if (!text.trim()) return;
+
+      // Rate limit: wait if we sent too recently
+      const elapsed = Date.now() - lastSendTime;
+      if (elapsed < MIN_SEND_INTERVAL) {
+        await new Promise(r => setTimeout(r, MIN_SEND_INTERVAL - elapsed));
+      }
+
+      try {
+        await chatProvider.sendLongMessage(channelId, '```\n' + text + '\n```');
+        lastSendTime = Date.now();
+      } catch (e) {
+        console.error('[BotEngine] Batcher send error:', e.message);
+      }
+    }
+
+    return {
+      push(text) {
+        if (destroyed) return;
+        buffer.push(text);
+        if (buffer.length >= MAX_LINES) {
+          if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+          flush();
+        } else {
+          scheduleFlush();
+        }
+      },
+      async flush() {
+        if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+        await flush();
+      },
+      destroy() {
+        destroyed = true;
+        if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      }
+    };
+  }
+
+  // ============================================
   // COMMAND HANDLERS
   // ============================================
 
@@ -57,7 +126,7 @@ function createBotEngine(options) {
     const [instanceId, ...pathParts] = parts;
     const projectDir = pathParts.join(' ');
 
-    const result = aiBackend.startInstance(instanceId, projectDir, ctx.channelId);
+    const result = await aiBackend.startInstance(instanceId, projectDir, ctx.channelId);
 
     if (result.success) {
       if (chatProvider.supportsCards) {
@@ -189,6 +258,216 @@ function createBotEngine(options) {
   }
 
   /**
+   * Handle the 'run' command (one-shot Sprite execution)
+   * Usage: /od-run [--image <image>] [--repo <repo>] [--branch <branch>] <task>
+   */
+  async function handleRun(ctx, args) {
+    // Check if backend supports run (has jobs - sprite-core)
+    if (!aiBackend.jobs) {
+      await ctx.reply(
+        `The \`${commandPrefix}-run\` command requires Sprite backend.\n` +
+        `Current backend doesn't support one-shot job execution.`
+      );
+      return;
+    }
+
+    // Parse options and task from args
+    const parsed = parseRunArgs(args);
+
+    if (!parsed.task) {
+      await ctx.reply(
+        `Usage: \`${commandPrefix}-run [--image <image>] [--repo <repo>] [--branch <branch>] <task>\`\n\n` +
+        `**Examples:**\n` +
+        `\`${commandPrefix}-run --repo github.com/user/project "run the tests"\`\n` +
+        `\`${commandPrefix}-run --image my-agent:v1 --repo github.com/user/project "lint the code"\``
+      );
+      return;
+    }
+
+    // Create a temporary instance for this job
+    const instanceId = `run-${Date.now()}`;
+    const projectDir = parsed.repo || 'default';
+
+    const startResult = await aiBackend.startInstance(instanceId, projectDir, ctx.channelId);
+    if (!startResult.success) {
+      await ctx.reply(`Failed to start job: ${startResult.error}`);
+      return;
+    }
+
+    // Show initial message
+    if (chatProvider.supportsCards) {
+      await chatProvider.sendCard(ctx.channelId, {
+        title: 'Job Started',
+        color: '#0099ff',
+        fields: [
+          { name: 'Task', value: parsed.task, inline: false },
+          parsed.repo && { name: 'Repo', value: parsed.repo, inline: true },
+          parsed.branch && { name: 'Branch', value: parsed.branch, inline: true },
+          parsed.image && { name: 'Image', value: parsed.image, inline: true }
+        ].filter(Boolean),
+        footer: 'Streaming logs as they arrive...'
+      });
+    } else {
+      let msg = `**Job Started**\nTask: ${parsed.task}`;
+      if (parsed.repo) msg += `\nRepo: ${parsed.repo}`;
+      if (parsed.branch) msg += `\nBranch: ${parsed.branch}`;
+      if (parsed.image) msg += `\nImage: ${parsed.image}`;
+      await ctx.reply(msg);
+    }
+
+    // Show typing indicator
+    await chatProvider.sendTypingIndicator(ctx.channelId);
+
+    // Use message batcher for rate-limit protection
+    const batcher = createMessageBatcher(ctx.channelId);
+    const onMessage = async (text) => {
+      batcher.push(text);
+    };
+
+    // Execute the job
+    const result = await aiBackend.sendToInstance(instanceId, parsed.task, {
+      onMessage,
+      repo: parsed.repo,
+      branch: parsed.branch,
+      image: parsed.image
+    });
+
+    // Flush remaining output and clean up
+    await batcher.flush();
+    batcher.destroy();
+    aiBackend.stopInstance(instanceId);
+
+    // Send final status
+    if (result.success) {
+      if (chatProvider.supportsCards) {
+        const fields = [
+          { name: 'Status', value: 'Completed', inline: true },
+          { name: 'Job ID', value: result.jobId || 'N/A', inline: true }
+        ];
+
+        if (result.artifacts && result.artifacts.length > 0) {
+          fields.push({
+            name: 'Artifacts',
+            value: result.artifacts.map(a => `[${a.name}](${a.url})`).join('\n'),
+            inline: false
+          });
+        }
+
+        await chatProvider.sendCard(ctx.channelId, {
+          title: 'Job Completed',
+          color: '#00ff00',
+          fields
+        });
+      } else {
+        let msg = `**Job Completed** (${result.jobId || 'N/A'})`;
+        if (result.artifacts && result.artifacts.length > 0) {
+          msg += `\n\n**Artifacts:**\n${result.artifacts.map(a => `- ${a.name}: ${a.url}`).join('\n')}`;
+        }
+        await ctx.reply(msg);
+      }
+    } else {
+      if (chatProvider.supportsCards) {
+        await chatProvider.sendCard(ctx.channelId, {
+          title: 'Job Failed',
+          color: '#ff0000',
+          description: result.error,
+          fields: [
+            { name: 'Job ID', value: result.jobId || 'N/A', inline: true }
+          ]
+        });
+      } else {
+        await ctx.reply(`**Job Failed** (${result.jobId || 'N/A'})\nError: ${result.error}`);
+      }
+    }
+  }
+
+  /**
+   * Parse /od-run arguments
+   * @param {string} args - Raw argument string
+   * @returns {Object} Parsed options { image, repo, branch, task }
+   */
+  function parseRunArgs(args) {
+    const result = { image: null, repo: null, branch: null, task: null };
+    let remaining = args.trim();
+
+    // Extract --option value pairs
+    const optionRegex = /--(\w+)\s+(\S+)/g;
+    let match;
+
+    while ((match = optionRegex.exec(remaining)) !== null) {
+      const [fullMatch, option, value] = match;
+      switch (option.toLowerCase()) {
+        case 'image':
+          result.image = value;
+          break;
+        case 'repo':
+          result.repo = value;
+          break;
+        case 'branch':
+          result.branch = value;
+          break;
+      }
+    }
+
+    // Remove all --option value pairs to get the task
+    remaining = remaining.replace(/--\w+\s+\S+/g, '').trim();
+
+    // Task can be quoted or unquoted
+    if (remaining.startsWith('"') && remaining.endsWith('"')) {
+      result.task = remaining.slice(1, -1);
+    } else if (remaining.startsWith("'") && remaining.endsWith("'")) {
+      result.task = remaining.slice(1, -1);
+    } else {
+      result.task = remaining;
+    }
+
+    return result;
+  }
+
+  /**
+   * Handle the 'jobs' command (list Sprite jobs)
+   */
+  async function handleJobs(ctx) {
+    if (!aiBackend.listJobs) {
+      await ctx.reply(`The \`${commandPrefix}-jobs\` command requires Sprite backend.`);
+      return;
+    }
+
+    const jobs = aiBackend.listJobs();
+
+    if (jobs.length === 0) {
+      if (chatProvider.supportsCards) {
+        await chatProvider.sendCard(ctx.channelId, {
+          title: 'No Jobs',
+          description: `Use \`${commandPrefix}-run\` to start a job.`
+        });
+      } else {
+        await ctx.reply('No jobs found.');
+      }
+      return;
+    }
+
+    if (chatProvider.supportsCards) {
+      const fields = jobs.slice(-10).map((job) => ({
+        name: `${job.jobId.substring(0, 8)}... (${job.status})`,
+        value: `${job.repo || 'N/A'}\n${job.artifactCount} artifacts`,
+        inline: false
+      }));
+
+      await chatProvider.sendCard(ctx.channelId, {
+        title: 'Recent Jobs',
+        color: '#0099ff',
+        fields
+      });
+    } else {
+      const lines = jobs.slice(-10).map((job) =>
+        `- **${job.jobId.substring(0, 8)}...** [${job.status}] - ${job.repo || 'N/A'}`
+      );
+      await ctx.reply(`**Recent Jobs:**\n${lines.join('\n')}`);
+    }
+  }
+
+  /**
    * Send a message to an AI instance and handle the response
    */
   async function sendMessageToInstance(ctx, instanceId, message) {
@@ -314,6 +593,12 @@ function createBotEngine(options) {
       case 'send':
         await handleSend(ctx, args);
         break;
+      case 'run':
+        await handleRun(ctx, args);
+        break;
+      case 'jobs':
+        await handleJobs(ctx);
+        break;
       default:
         await ctx.reply(
           `Unknown command: ${command}\n\n` +
@@ -321,7 +606,9 @@ function createBotEngine(options) {
           `- \`${commandPrefix}-start <name> <path>\` - Start an instance\n` +
           `- \`${commandPrefix}-stop <name>\` - Stop an instance\n` +
           `- \`${commandPrefix}-list\` - List instances\n` +
-          `- \`${commandPrefix}-send <name> <message>\` - Send to instance`
+          `- \`${commandPrefix}-send <name> <message>\` - Send to instance\n` +
+          `- \`${commandPrefix}-run [options] <task>\` - Run one-shot job in Sprite\n` +
+          `- \`${commandPrefix}-jobs\` - List recent jobs`
         );
     }
   });

@@ -27,37 +27,52 @@
 ```yaml
 TASK: Help user set up Open Dispatch
 CONTEXT: Bridge app connecting chat platforms (Slack/Teams/Discord) to AI coding assistants (OpenCode/Claude)
+         Supports LOCAL mode (agents run on user's machine) and CLOUD mode (agents run in Sprites on Fly.io)
 
 SETUP FLOW:
 1. Ask user: "Which chat platform? (Slack, Teams, or Discord)"
-2. Ask user: "Which AI backend? (OpenCode for 75+ providers, or Claude Code)"
-3. Verify prerequisites are installed (see Prerequisites section)
-4. Guide through platform-specific setup (create app, get tokens)
-5. Create .env file with collected credentials
-6. Run appropriate start command
-7. Test with /od-start command in chat
+2. Ask user: "Which execution mode? (Local for desktop, or Sprites for cloud VMs)"
+3. Ask user: "Which AI backend? (OpenCode for 75+ providers, or Claude Code)"
+4. Verify prerequisites are installed (see Prerequisites section)
+5. Guide through platform-specific setup (create app, get tokens)
+6. For Sprites: Guide through Fly.io setup (see SPRITE_SETUP.md)
+7. Create .env file with collected credentials
+8. Run appropriate start command
+9. Test with /od-start or /od-run command in chat
 
 KEY COMMANDS:
-- npm start                      → Slack + Claude Code
-- npm run start:opencode         → Slack + OpenCode (RECOMMENDED)
-- npm run start:teams            → Teams + Claude Code
-- npm run start:teams:opencode   → Teams + OpenCode
-- npm run start:discord          → Discord + Claude Code
-- npm run start:discord:opencode → Discord + OpenCode
+- npm start                      → Slack + Claude Code (local)
+- npm run start:opencode         → Slack + OpenCode (local, RECOMMENDED)
+- npm run start:teams            → Teams + Claude Code (local)
+- npm run start:teams:opencode   → Teams + OpenCode (local)
+- npm run start:discord          → Discord + Claude Code (local)
+- npm run start:discord:opencode → Discord + OpenCode (local)
+- npm run start:sprite           → Any provider + Sprite cloud VMs (set CHAT_PROVIDER)
 
 SLASH COMMANDS (in chat):
-- /od-start <name> <path>  → Start instance
+LOCAL MODE:
+- /od-start <name> <path>  → Start local instance bound to channel
 - /od-stop <name>          → Stop instance
 - /od-list                 → List instances
 - /od-send <name> <msg>    → Send to specific instance
+
+SPRITE MODE (cloud VMs):
+- /od-run [options] <task> → One-shot: spawn VM, run task, terminate
+  Options: --repo <url>, --branch <name>, --image <docker-image>
+- /od-start <name> --repo <url> --persistent → Persistent VM session
+- /od-jobs                 → List recent Sprite jobs
 
 TROUBLESHOOTING:
 - "appToken" error → Missing SLACK_APP_TOKEN in .env
 - No response → Bot not invited to channel, or /od-start not run
 - "Instance not found" → Bot restarted, run /od-start again
-- Discord slash commands not showing → Wait up to 1 hour for global commands, or use DISCORD_GUILD_ID
+- Discord slash commands not showing → Wait up to 1 hour for global commands
+- "No API token" for Sprites → Set FLY_API_TOKEN (Fly.io token)
+- Sprite spawn failed → Check image exists, Fly.io token valid
 
-SUCCESS CRITERIA: User can /od-start an instance and send messages from their phone
+SUCCESS CRITERIA:
+- Local: User can /od-start and send messages from phone
+- Sprites: User can /od-run a task and see streamed results
 ```
 
 ---
@@ -74,6 +89,8 @@ SUCCESS CRITERIA: User can /od-start an instance and send messages from their ph
 | **📦 Multi-Project** | Run multiple instances simultaneously |
 | **🎯 Smart Routing** | Messages route to correct project based on channel |
 | **🔌 Pluggable Architecture** | Easy to add new chat platforms via ChatProvider interface |
+| **☁️ Sprite Cloud Execution** | Run agents in isolated micro-VMs on Fly.io |
+| **💤 Auto-Sleep** | Sprites hibernate when idle, wake on demand (pay only for compute used) |
 
 ---
 
@@ -322,7 +339,7 @@ npm run start:opencode
 
 ## 💻 Commands
 
-### Slash Commands
+### Local Mode Commands
 
 | Command | Example | Description |
 |---------|---------|-------------|
@@ -330,6 +347,21 @@ npm run start:opencode
 | `/od-stop` | `/od-stop api` | Stop the "api" instance |
 | `/od-list` | `/od-list` | Show all running instances |
 | `/od-send` | `/od-send api add tests` | Send message to "api" from any channel |
+
+### Sprite Mode Commands (Cloud VMs)
+
+| Command | Example | Description |
+|---------|---------|-------------|
+| `/od-run` | `/od-run --repo github.com/user/proj "run tests"` | One-shot job in fresh Sprite |
+| `/od-run` | `/od-run --image my-agent:v1 --repo ... "task"` | One-shot with custom image |
+| `/od-start` | `/od-start bot --repo github.com/user/proj --persistent` | Persistent Sprite session |
+| `/od-jobs` | `/od-jobs` | List recent Sprite jobs |
+
+**Sprite Options:**
+- `--repo <url>` - GitHub repository to clone
+- `--branch <name>` - Branch to checkout (default: main)
+- `--image <image>` - Docker image to use
+- `--persistent` - Keep Sprite alive for multiple messages
 
 ### Chat Messages
 
@@ -401,7 +433,7 @@ The AI responds in the same channel.
 └───────────────┘   └─────────────────┘  └───────────────┘
 ```
 
-### How It Works
+### How It Works (Local Mode)
 
 1. **Start**: `/od-start` creates a session ID and binds channel → project
 2. **Message**: Your chat message is sent to Open Dispatch
@@ -409,6 +441,45 @@ The AI responds in the same channel.
 4. **Process**: AI processes your message with full conversation context
 5. **Filter**: Tool calls are filtered out, only text responses returned
 6. **Reply**: Clean response appears in your chat
+
+### Sprite Architecture (Cloud Mode)
+
+For scalable, isolated execution, Open Dispatch supports **Sprites**—ephemeral micro-VMs that run agents in clean environments:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       CLOUD DEPLOYMENT                          │
+│                                                                 │
+│  ┌────────────────────────────────────────────────────────────┐│
+│  │              OPEN DISPATCH (Orchestrator)                   ││
+│  │                                                            ││
+│  │  • Receives commands from Slack/Teams/Discord              ││
+│  │  • Creates Jobs with unique IDs                            ││
+│  │  • Spawns Sprites via API                                  ││
+│  │  • Streams logs back to chat                               ││
+│  │  • Collects artifacts (screenshots, videos, logs)          ││
+│  └────────────────────────────┬───────────────────────────────┘│
+│                               │                                 │
+│       ┌───────────────────────┼───────────────────────┐        │
+│       │                       │                       │        │
+│  ┌────▼─────┐           ┌─────▼────┐           ┌─────▼────┐   │
+│  │ Sprite 1 │           │ Sprite 2 │           │ Sprite 3 │   │
+│  │ (Job A)  │           │ (Job B)  │           │ (Job C)  │   │
+│  │ isolated │           │ isolated │           │ isolated │   │
+│  └──────────┘           └──────────┘           └──────────┘   │
+│                                                                 │
+│  Sprites: Ephemeral micro-VMs on Fly.io                        │
+│  • Auto-sleep when idle (usage-based billing)                  │
+│  • Clean environment per job                                   │
+│  • Runs Playwright tests, AI agents, etc.                      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Benefits of Sprites:**
+- **Isolation**: Each job runs in its own VM—no state pollution
+- **Scalability**: Trivial to run parallel jobs
+- **Cost**: Pay only for compute used (auto-sleep when idle)
+- **Clean environments**: No dependency conflicts between jobs
 
 ---
 
@@ -495,7 +566,16 @@ open-dispatch/
 │   ├── discord-bot.js          # Discord + Claude Code
 │   ├── discord-opencode-bot.js # Discord + OpenCode
 │   ├── claude-core.js          # Claude CLI integration
-│   └── opencode-core.js        # OpenCode CLI integration
+│   ├── opencode-core.js        # OpenCode CLI integration
+│   ├── sprite-core.js          # Sprite (ephemeral VM) integration
+│   ├── sprite-orchestrator.js  # Fly Machines API orchestration
+│   ├── sprite-bot.js           # Provider-agnostic Sprite entry point
+│   ├── webhook-server.js       # Receives output from Sprites via webhooks
+│   └── job.js                  # Job tracking for Sprite executions
+├── sidecar/
+│   ├── sprite-reporter.sh      # Sprite entry point (clone, run, report)
+│   ├── output-relay.js         # Buffered stdout → webhook relay
+│   └── Dockerfile              # Sidecar image for COPY --from=
 ├── tests/
 │   ├── opencode-core.test.js   # Core logic tests
 │   └── chat-provider.test.js   # Provider architecture tests
@@ -504,6 +584,7 @@ open-dispatch/
 ├── OPENCODE_SETUP.md          # OpenCode guide
 ├── TEAMS_SETUP.md             # Teams guide
 ├── DISCORD_SETUP.md           # Discord guide
+├── SPRITE_SETUP.md            # Sprite (cloud VM) guide
 └── package.json
 ```
 
