@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production
+RUN npm ci --omit=dev
 
 # Production stage
 FROM node:20-alpine AS production
@@ -35,4 +35,4 @@ USER nodejs
 EXPOSE 3978
 
 # Default command - can be overridden with docker run or fly.toml
-CMD ["npm", "start"]
+CMD ["node", "src/bot.js"]
