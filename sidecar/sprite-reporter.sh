@@ -16,6 +16,7 @@
 #   BRANCH              — Git branch (default: main)
 #   GH_TOKEN            — GitHub token (for private repos and gh CLI)
 #   ANTHROPIC_API_KEY   — For Claude-based agents
+#   OPENCODE_AUTH_JSON  — OpenCode auth.json contents (for Copilot/provider auth)
 # =============================================================================
 
 set -euo pipefail
@@ -118,6 +119,15 @@ git config --global user.name "Open-Dispatch Sprite"
 # Make GH_TOKEN available to gh CLI
 if [ -n "${GH_TOKEN:-}" ]; then
   export GITHUB_TOKEN="$GH_TOKEN"
+fi
+
+# Inject OpenCode auth credentials (for Copilot, API keys, etc.)
+if [ -n "${OPENCODE_AUTH_JSON:-}" ]; then
+  OPENCODE_AUTH_DIR="${HOME}/.local/share/opencode"
+  mkdir -p "$OPENCODE_AUTH_DIR"
+  echo "$OPENCODE_AUTH_JSON" > "$OPENCODE_AUTH_DIR/auth.json"
+  chmod 600 "$OPENCODE_AUTH_DIR/auth.json"
+  echo "[sprite-reporter] OpenCode auth credentials injected"
 fi
 
 # ---------------------------------------------------------------------------

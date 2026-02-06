@@ -340,7 +340,39 @@ Your agent image is responsible for uploading artifacts to external storage (S3,
 | `COMMAND` | Agent command to execute |
 | `GH_TOKEN` | GitHub token (passed through from host) |
 | `ANTHROPIC_API_KEY` | Anthropic key (passed through from host) |
+| `OPENCODE_AUTH_JSON` | OpenCode auth.json contents (for Copilot/provider auth) |
 | `DATABASE_URL` | Database URL (passed through if set on host) |
+
+## Using GitHub Copilot in Sprites
+
+If you have a GitHub Copilot subscription, you can use it with OpenCode in Sprites — no separate API key needed. The sidecar automatically injects OpenCode credentials when the `OPENCODE_AUTH_JSON` env var is set.
+
+### Setup
+
+1. **Auth once locally** (if you haven't already):
+   ```bash
+   opencode auth login   # Select GitHub Copilot → complete device flow
+   ```
+
+2. **Set the Fly secret** with your local auth.json:
+   ```bash
+   fly secrets set OPENCODE_AUTH_JSON="$(cat ~/.local/share/opencode/auth.json)"
+   ```
+
+3. **That's it.** The sidecar writes the credentials to `~/.local/share/opencode/auth.json` inside the Sprite before the agent starts. No interactive login required.
+
+### How it works
+
+- OpenCode stores provider credentials in `~/.local/share/opencode/auth.json`
+- The GitHub OAuth token from the device flow is long-lived (no expiry)
+- The sidecar's `sprite-reporter` writes `OPENCODE_AUTH_JSON` to disk at startup
+- OpenCode picks up the credentials and authenticates with Copilot automatically
+
+### Notes
+
+- This works for **any** OpenCode provider credentials, not just Copilot
+- If the token is revoked on GitHub, re-run `opencode auth login` locally and update the Fly secret
+- The auth.json is written with `chmod 600` (owner-only read/write)
 
 ## Troubleshooting
 

@@ -88,6 +88,9 @@ class SpriteOrchestrator extends EventEmitter {
     if (process.env.DATABASE_URL) {
       machineEnv.DATABASE_URL = process.env.DATABASE_URL;
     }
+    if (process.env.OPENCODE_AUTH_JSON) {
+      machineEnv.OPENCODE_AUTH_JSON = process.env.OPENCODE_AUTH_JSON;
+    }
 
     try {
       const response = await this.fetchFn(this._machinesUrl(), {
@@ -149,6 +152,7 @@ class SpriteOrchestrator extends EventEmitter {
               OPEN_DISPATCH_URL: this.openDispatchUrl,
               GH_TOKEN: process.env.GH_TOKEN || '',
               ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
+              ...(process.env.OPENCODE_AUTH_JSON && { OPENCODE_AUTH_JSON: process.env.OPENCODE_AUTH_JSON }),
               ...env
             },
             auto_destroy: false,
