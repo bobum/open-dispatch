@@ -229,17 +229,18 @@ describe('Sprite Instance Manager', () => {
       assert.strictEqual(result.jobId, jobId);
     });
 
-    // Skipped: would need custom timeoutMs plumbing or wait 10 min
-    it('should timeout if webhook never fires', { skip: 'requires custom timeoutMs plumbing' }, async () => {
+    it('should timeout if webhook never fires', async () => {
       await manager.startInstance('timeout-test', 'owner/repo', 'C123');
 
       const result = await manager.sendToInstance('timeout-test', 'slow task', {
         onMessage: async () => {},
-        repo: 'owner/repo'
+        repo: 'owner/repo',
+        timeoutMs: 200 // short timeout for fast test
       });
 
-      const jobs = manager.listJobs();
-      assert.ok(jobs.length > 0);
+      assert.strictEqual(result.success, false);
+      assert.ok(result.error.includes('timed out'));
+      assert.ok(result.jobId);
     });
 
     it('should handle spawn failure', async () => {

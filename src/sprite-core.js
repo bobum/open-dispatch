@@ -158,7 +158,7 @@ function createInstanceManager(options = {}) {
       return { success: false, error: `Instance "${instanceId}" not found` };
     }
 
-    const { onMessage, repo, branch = 'main', image } = options;
+    const { onMessage, repo, branch = 'main', image, timeoutMs } = options;
     instance.messageCount++;
 
     const agentCommand = buildAgentCommand(message, instance.sessionId, agentType);
@@ -169,7 +169,7 @@ function createInstanceManager(options = {}) {
     }
 
     // One-shot: spawn Machine, wait for webhook callback
-    return sendToNewSprite(instance, agentCommand, { onMessage, repo, branch, image });
+    return sendToNewSprite(instance, agentCommand, { onMessage, repo, branch, image, timeoutMs });
   }
 
   async function sendToPersistentSprite(instance, command, onMessage) {
@@ -232,7 +232,7 @@ function createInstanceManager(options = {}) {
    * The Promise resolves when /webhooks/status fires with completed/failed.
    */
   async function sendToNewSprite(instance, agentCommand, options) {
-    const { onMessage, repo, branch = 'main', image } = options;
+    const { onMessage, repo, branch = 'main', image, timeoutMs = 600000 } = options;
 
     const jobToken = orchestrator.generateJobToken(randomUUID());
 
@@ -245,7 +245,7 @@ function createInstanceManager(options = {}) {
       image,
       jobToken,
       onMessage,
-      timeoutMs: 600000
+      timeoutMs
     });
 
     // Create a Promise that resolves when the webhook status fires

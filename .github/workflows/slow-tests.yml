@@ -1,0 +1,21 @@
+name: Slow Tests (Nightly)
+
+on:
+  schedule:
+    # Every night at 3:00 AM UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  test-all:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Run full test suite (including slow tests)
+        run: npm run test:all
+        env:
+          RUN_SLOW_TESTS: 1

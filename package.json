@@ -18,7 +18,9 @@
     "dev:discord:opencode": "node --watch src/discord-opencode-bot.js",
     "start:sprite": "node src/sprite-bot.js",
     "dev:sprite": "node --watch src/sprite-bot.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "test:slow": "RUN_SLOW_TESTS=1 node --test tests/sprite-slow.test.js",
+    "test:all": "RUN_SLOW_TESTS=1 node --test tests/*.test.js"
   },
   "keywords": [
     "claude",
