@@ -169,6 +169,7 @@ SPRITE_IMAGE=registry.fly.io/my-sprites/agent:latest
 # Passed through to Sprites automatically:
 # GH_TOKEN=your-github-token
 # ANTHROPIC_API_KEY=your-anthropic-key
+# OPENCODE_AUTH_JSON='{"github-copilot":{"type":"oauth",...}}'  # See "Using GitHub Copilot in Sprites"
 ```
 
 ## Step 6: Run
