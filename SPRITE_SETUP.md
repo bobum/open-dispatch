@@ -62,6 +62,18 @@ Sprites are ephemeral Fly Machines that:
 6. Open-Dispatch relays output to the chat channel in real-time
 7. When the agent finishes, the Sprite reports final status and auto-destroys
 
+### The Fresh-Clone Pattern
+
+Every Sprite starts clean — fresh VM, fresh clone. All state lives in git, not in the Machine. This means Sprites are fully disposable and the typical workflow is:
+
+1. `/od-run --repo owner/project --branch main "fix the failing tests and open a PR"`
+2. Sprite clones, fixes tests, pushes a PR, auto-destroys
+3. You review the PR and want changes
+4. `/od-run --repo owner/project --branch fix-tests "address the review comments on PR #42"`
+5. A new Sprite clones the branch (with all commits from step 2), makes changes, pushes, auto-destroys
+
+There's no state to lose because every commit is in git. Each Sprite picks up exactly where the last one left off. If a Sprite times out or fails, just run another one — it'll clone the latest state and keep going.
+
 ## Prerequisites
 
 - A [Fly.io](https://fly.io) account
