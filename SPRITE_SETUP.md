@@ -277,6 +277,27 @@ Your Sprite image needs an AI agent CLI installed. Open-Dispatch supports two:
 
 You can install both in the same image and switch via `SPRITE_AGENT_TYPE` (`opencode` or `claude`).
 
+### Permissions in Headless Sprites
+
+Sprites run without a human at the terminal, so the agent CLI must auto-approve all actions.
+
+**Claude Code CLI** — pass the flag in the command:
+```bash
+claude --dangerously-skip-permissions -p "your task"
+```
+
+**OpenCode** — there is no CLI flag equivalent. Instead, add an `opencode.json` to your repo root (or bake one into your Docker image at `/workspace/opencode.json`):
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": "allow"
+}
+```
+
+This auto-approves all file edits, shell commands, and tool use. See the [OpenCode permissions docs](https://opencode.ai/docs/permissions) for granular control (e.g., allowing edits but denying `rm *`).
+
+> **Note:** This is the image builder's responsibility. If your Sprite image uses OpenCode and doesn't have permissions configured, the agent will hang waiting for approval that never comes.
+
 ## Sprite Lifecycle
 
 Sprites are ephemeral — they spin up, do their work, and shut down. Here's when they terminate:
