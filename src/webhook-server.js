@@ -84,11 +84,14 @@ function createWebhookServer({ jobs, port = 8080 }) {
         try {
           resolve(data ? JSON.parse(data) : {});
         } catch (e) {
-          reject(new Error('Invalid JSON'));
+          const err = new Error('Invalid JSON');
+          err.code = 'INVALID_JSON';
+          reject(err);
         }
       });
       req.on('error', (err) => {
         if (rejected) return;
+        err.code = err.code || 'STREAM_ERROR';
         reject(err);
       });
     });
@@ -128,6 +131,7 @@ function createWebhookServer({ jobs, port = 8080 }) {
       if (e.code === 'BODY_TOO_LARGE') {
         return respond(res, 413, { error: 'Payload too large' });
       }
+      if (e.code === 'STREAM_ERROR') return respond(res, 502, { error: 'Stream error' });
       return respond(res, 400, { error: 'Invalid JSON' });
     }
 
@@ -167,6 +171,7 @@ function createWebhookServer({ jobs, port = 8080 }) {
       if (e.code === 'BODY_TOO_LARGE') {
         return respond(res, 413, { error: 'Payload too large' });
       }
+      if (e.code === 'STREAM_ERROR') return respond(res, 502, { error: 'Stream error' });
       return respond(res, 400, { error: 'Invalid JSON' });
     }
 
@@ -198,9 +203,13 @@ function createWebhookServer({ jobs, port = 8080 }) {
       }
     }
 
-    // Clean up completed/failed jobs from the map to prevent memory leaks
+    // Defer cleanup to allow late log/artifact webhooks to land gracefully.
+    // The stale reaper handles truly orphaned jobs; this just avoids 401s
+    // from in-flight requests that arrive after terminal status.
     if (status === 'completed' || status === 'failed') {
-      jobs.delete(jobId);
+      const JOB_CLEANUP_DELAY = 30_000; // 30 seconds
+      const timer = setTimeout(() => jobs.delete(jobId), JOB_CLEANUP_DELAY);
+      if (timer.unref) timer.unref();
     }
 
     respond(res, 200, { ok: true });
@@ -218,6 +227,7 @@ function createWebhookServer({ jobs, port = 8080 }) {
       if (e.code === 'BODY_TOO_LARGE') {
         return respond(res, 413, { error: 'Payload too large' });
       }
+      if (e.code === 'STREAM_ERROR') return respond(res, 502, { error: 'Stream error' });
       return respond(res, 400, { error: 'Invalid JSON' });
     }
 

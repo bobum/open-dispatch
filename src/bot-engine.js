@@ -395,6 +395,7 @@ function createBotEngine(options) {
     if (!spriteImages) return image;
     try {
       const aliases = JSON.parse(spriteImages);
+      if (typeof aliases !== 'object' || aliases === null) return image;
       return aliases[image] ?? image;
     } catch {
       return image;

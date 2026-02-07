@@ -331,7 +331,7 @@ function createInstanceManager(options = {}) {
     const escapedSessionId = shellEscape(sessionId);
 
     if (type === 'opencode') {
-      return `test -f /etc/opencode/opencode.json && ! test -f /workspace/opencode.json && cp /etc/opencode/opencode.json /workspace/opencode.json; NO_COLOR=1 opencode run -- "${escapedMessage}" 2>&1 | perl -pe 's/\\x1b\\[[0-9;]*[a-zA-Z]//g'`;
+      return `test -f /etc/opencode/opencode.json && ! test -f "\${WORKDIR:-/workspace}/opencode.json" && cp /etc/opencode/opencode.json "\${WORKDIR:-/workspace}/opencode.json"; NO_COLOR=1 opencode run -- "${escapedMessage}" 2>&1 | perl -pe 's/\\x1b\\[[0-9;]*[a-zA-Z]//g'`;
     }
 
     return `claude --dangerously-skip-permissions --output-format stream-json --session-id "${escapedSessionId}" -p "${escapedMessage}"`;
