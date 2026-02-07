@@ -1,9 +1,12 @@
 /**
  * Teams Bot with OpenCode Backend
- * 
+ *
  * This bot uses OpenCode (supporting 75+ AI providers) instead of Claude CLI.
  * Use this when you want to use OpenAI, Google, local models, etc.
  */
+
+const { registerFatalHandlers } = require('./process-handlers');
+registerFatalHandlers();
 
 require('dotenv').config();
 
@@ -549,3 +552,18 @@ server.listen(PORT, () => {
   console.log(`  ngrok http ${PORT}`);
   console.log('  Then update your Teams Developer Portal bot messaging endpoint');
 });
+
+// Graceful shutdown
+let isShuttingDown = false;
+
+function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`\nShutting down... (${signal})`);
+  server.close(() => {
+    process.exit(0);
+  });
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

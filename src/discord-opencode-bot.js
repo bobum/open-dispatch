@@ -17,6 +17,9 @@
  *   node src/discord-opencode-bot.js
  */
 
+const { registerFatalHandlers } = require('./process-handlers');
+registerFatalHandlers();
+
 require('dotenv').config();
 
 const { DiscordProvider } = require('./providers/discord-provider');

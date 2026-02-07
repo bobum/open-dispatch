@@ -10,6 +10,9 @@
 
 const http = require('http');
 
+/** Maximum body size: 1 MB */
+const MAX_BODY_SIZE = 1 * 1024 * 1024;
+
 /**
  * Create a webhook server.
  * @param {Object} options
@@ -50,16 +53,44 @@ function createWebhookServer({ jobs, port = 8080 }) {
    */
   function parseBody(req) {
     return new Promise((resolve, reject) => {
+      // Early rejection based on Content-Length header when present
+      const contentLength = parseInt(req.headers['content-length'], 10);
+      if (contentLength > MAX_BODY_SIZE) {
+        req.resume(); // Drain the request body
+        const err = new Error('Body too large');
+        err.code = 'BODY_TOO_LARGE';
+        reject(err);
+        return;
+      }
+
       let data = '';
-      req.on('data', chunk => { data += chunk; });
+      let size = 0;
+      let rejected = false;
+      req.on('data', chunk => {
+        if (rejected) return;
+        size += chunk.length;
+        if (size > MAX_BODY_SIZE) {
+          rejected = true;
+          req.resume();
+          const err = new Error('Body too large');
+          err.code = 'BODY_TOO_LARGE';
+          reject(err);
+          return;
+        }
+        data += chunk;
+      });
       req.on('end', () => {
+        if (rejected) return;
         try {
           resolve(data ? JSON.parse(data) : {});
         } catch (e) {
           reject(new Error('Invalid JSON'));
         }
       });
-      req.on('error', reject);
+      req.on('error', (err) => {
+        if (rejected) return;
+        reject(err);
+      });
     });
   }
 
@@ -93,7 +124,10 @@ function createWebhookServer({ jobs, port = 8080 }) {
     let body;
     try {
       body = await parseBody(req);
-    } catch {
+    } catch (e) {
+      if (e.code === 'BODY_TOO_LARGE') {
+        return respond(res, 413, { error: 'Payload too large' });
+      }
       return respond(res, 400, { error: 'Invalid JSON' });
     }
 
@@ -129,7 +163,10 @@ function createWebhookServer({ jobs, port = 8080 }) {
     let body;
     try {
       body = await parseBody(req);
-    } catch {
+    } catch (e) {
+      if (e.code === 'BODY_TOO_LARGE') {
+        return respond(res, 413, { error: 'Payload too large' });
+      }
       return respond(res, 400, { error: 'Invalid JSON' });
     }
 
@@ -161,6 +198,11 @@ function createWebhookServer({ jobs, port = 8080 }) {
       }
     }
 
+    // Clean up completed/failed jobs from the map to prevent memory leaks
+    if (status === 'completed' || status === 'failed') {
+      jobs.delete(jobId);
+    }
+
     respond(res, 200, { ok: true });
   }
 
@@ -172,7 +214,10 @@ function createWebhookServer({ jobs, port = 8080 }) {
     let body;
     try {
       body = await parseBody(req);
-    } catch {
+    } catch (e) {
+      if (e.code === 'BODY_TOO_LARGE') {
+        return respond(res, 413, { error: 'Payload too large' });
+      }
       return respond(res, 400, { error: 'Invalid JSON' });
     }
 
