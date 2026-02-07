@@ -351,9 +351,10 @@ describe('Webhook Server', () => {
 
   // ===========================================================
   // Job cleanup: jobs removed from Map after terminal status
+  // Deletion is deferred (30s grace period) to allow late webhooks
   // ===========================================================
   describe('job cleanup after webhook status', () => {
-    it('should fire onComplete on completed status and remove job from map', async () => {
+    it('should fire onComplete on completed status and defer job removal', async () => {
       let completedJobId = null;
       const job = new Job({
         repo: 'r', command: 'c', channelId: 'ch', jobToken: 'tok',
@@ -368,10 +369,11 @@ describe('Webhook Server', () => {
 
       assert.strictEqual(completedJobId, job.jobId);
       assert.strictEqual(job.status, JobStatus.COMPLETED);
-      assert.strictEqual(jobs.has(job.jobId), false, 'Completed job should be removed from map');
+      // Job still present immediately — deletion is deferred by 30s grace period
+      assert.strictEqual(jobs.has(job.jobId), true, 'Completed job should still be in map during grace period');
     });
 
-    it('should fire onComplete on failed status and remove job from map', async () => {
+    it('should fire onComplete on failed status and defer job removal', async () => {
       let completedJobId = null;
       const job = new Job({
         repo: 'r', command: 'c', channelId: 'ch', jobToken: 'tok',
@@ -386,7 +388,8 @@ describe('Webhook Server', () => {
 
       assert.strictEqual(completedJobId, job.jobId);
       assert.strictEqual(job.status, JobStatus.FAILED);
-      assert.strictEqual(jobs.has(job.jobId), false, 'Failed job should be removed from map');
+      // Job still present immediately — deletion is deferred by 30s grace period
+      assert.strictEqual(jobs.has(job.jobId), true, 'Failed job should still be in map during grace period');
     });
 
     it('should not fire onComplete for running status update', async () => {
