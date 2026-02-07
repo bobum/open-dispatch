@@ -337,13 +337,12 @@ describe('Webhook Server', () => {
       assert.strictEqual(res.status, 200);
     });
 
-    it('should accept a body exactly at a reasonable size', async () => {
+    it('should accept a moderately large body under the size limit', async () => {
       const job = new Job({ repo: 'r', command: 'c', channelId: 'ch', jobToken: 'tok' });
       jobs.set(job.jobId, job);
 
-      // Create text that is large but under a typical 1MB limit
-      // (accounting for the JSON envelope overhead)
-      const text = 'a'.repeat(500 * 1024); // 500KB
+      // ~500KB payload text, well under the 1MB limit
+      const text = 'a'.repeat(500 * 1024);
       const body = JSON.stringify({ jobId: job.jobId, text });
       const res = await postRaw(port, '/webhooks/logs', body, 'tok');
       assert.strictEqual(res.status, 200);

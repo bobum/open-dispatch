@@ -429,14 +429,16 @@ server.listen(PORT, () => {
 });
 
 // Graceful shutdown
-process.on('SIGINT', () => {
-  console.log('\nShutting down...');
-  server.close();
-  process.exit(0);
-});
+let isShuttingDown = false;
 
-process.on('SIGTERM', () => {
-  console.log('\nShutting down...');
-  server.close();
-  process.exit(0);
-});
+function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`\nShutting down... (${signal})`);
+  server.close(() => {
+    process.exit(0);
+  });
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

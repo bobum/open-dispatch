@@ -314,7 +314,6 @@ function createInstanceManager(options = {}) {
    *   ` → \`     (command substitution)
    *   " → \"     (close quote)
    *   ! → \!     (bash history expansion)
-   *   ' → \'     (prevents payload reconstruction in command strings)
    * @param {string} str
    * @returns {string}
    */
@@ -324,8 +323,7 @@ function createInstanceManager(options = {}) {
       .replace(/\$/g, '\\$')
       .replace(/`/g, '\\`')
       .replace(/"/g, '\\"')
-      .replace(/!/g, '\\!')
-      .replace(/'/g, "\\'");
+      .replace(/!/g, '\\!');
   }
 
   function buildAgentCommand(message, sessionId, type) {
@@ -339,17 +337,18 @@ function createInstanceManager(options = {}) {
     return `claude --dangerously-skip-permissions --output-format stream-json --session-id "${escapedSessionId}" -p "${escapedMessage}"`;
   }
 
+  // buildArgs constructs an argv array for direct process execution,
+  // so we must not apply shell-style escaping here. The raw strings
+  // are passed as-is to the underlying CLI.
   function buildArgs(message, projectDir, sessionId) {
-    const escaped = shellEscape(message);
-    const escapedSession = shellEscape(sessionId);
     if (agentType === 'opencode') {
-      return ['run', '--format', 'json', '--session', escapedSession, '--', escaped];
+      return ['run', '--format', 'json', '--session', sessionId, '--', message];
     }
     return [
       '--dangerously-skip-permissions',
       '--output-format', 'stream-json',
-      '--session-id', escapedSession,
-      '-p', escaped
+      '--session-id', sessionId,
+      '-p', message
     ];
   }
 
@@ -404,6 +403,7 @@ function createInstanceManager(options = {}) {
     clearInstances,
     sendToInstance,
     buildArgs,
+    buildAgentCommand,
     getJob,
     listJobs,
     startStaleReaper,

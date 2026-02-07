@@ -315,27 +315,27 @@ describe('Unhandled rejection handlers in entry points', () => {
   // This is a static/grep-style check on the source code.
 
   const entryPoints = [
-    { name: 'bot.js', path: path.join(__dirname, '../src/bot.js') },
-    { name: 'sprite-bot.js', path: path.join(__dirname, '../src/sprite-bot.js') },
-    { name: 'discord-bot.js', path: path.join(__dirname, '../src/discord-bot.js') },
-    { name: 'discord-opencode-bot.js', path: path.join(__dirname, '../src/discord-opencode-bot.js') },
-    { name: 'teams-bot.js', path: path.join(__dirname, '../src/teams-bot.js') },
-    { name: 'teams-opencode-bot.js', path: path.join(__dirname, '../src/teams-opencode-bot.js') },
-    { name: 'opencode-bot.js', path: path.join(__dirname, '../src/opencode-bot.js') }
+    { name: 'bot.js', path: path.join(__dirname, '../src/bot.js'), requiresSigint: true },
+    { name: 'sprite-bot.js', path: path.join(__dirname, '../src/sprite-bot.js'), requiresSigint: true },
+    { name: 'discord-bot.js', path: path.join(__dirname, '../src/discord-bot.js'), requiresSigint: true },
+    { name: 'discord-opencode-bot.js', path: path.join(__dirname, '../src/discord-opencode-bot.js'), requiresSigint: true },
+    { name: 'teams-bot.js', path: path.join(__dirname, '../src/teams-bot.js'), requiresSigint: true },
+    { name: 'teams-opencode-bot.js', path: path.join(__dirname, '../src/teams-opencode-bot.js'), requiresSigint: true },
+    { name: 'opencode-bot.js', path: path.join(__dirname, '../src/opencode-bot.js'), requiresSigint: true }
   ];
 
   for (const ep of entryPoints) {
-    it(`${ep.name} should have SIGINT handler`, () => {
-      const source = fs.readFileSync(ep.path, 'utf8');
-      // All entry points should at minimum handle SIGINT for graceful shutdown.
-      // The SWE fix should also add unhandledRejection handlers.
-      assert.ok(
-        source.includes("process.on('SIGINT'") ||
-        source.includes('process.on("SIGINT"') ||
-        source.includes('process.on(`SIGINT`'),
-        `${ep.name} should have a SIGINT handler for graceful shutdown`
-      );
-    });
+    if (ep.requiresSigint) {
+      it(`${ep.name} should have SIGINT handler`, () => {
+        const source = fs.readFileSync(ep.path, 'utf8');
+        assert.ok(
+          source.includes("process.on('SIGINT'") ||
+          source.includes('process.on("SIGINT"') ||
+          source.includes('process.on(`SIGINT`'),
+          `${ep.name} should have a SIGINT handler for graceful shutdown`
+        );
+      });
+    }
 
     it(`${ep.name} should have unhandledRejection handler`, () => {
       const source = fs.readFileSync(ep.path, 'utf8');
