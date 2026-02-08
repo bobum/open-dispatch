@@ -77,8 +77,6 @@ class SpriteOrchestrator extends EventEmitter {
       JOB_ID: job.jobId,
       JOB_TOKEN: job.jobToken,
       OPEN_DISPATCH_URL: this.openDispatchUrl,
-      REPO: job.repo || '',
-      BRANCH: job.branch || 'main',
       COMMAND: job.command || '',
       GH_TOKEN: process.env.GH_TOKEN || '',
       ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
@@ -134,7 +132,7 @@ class SpriteOrchestrator extends EventEmitter {
    * @returns {Promise<Object>} Machine info
    */
   async spawnPersistent(options = {}) {
-    const { repo, branch = 'main', image, env = {} } = options;
+    const { image, env = {} } = options;
     const spriteImage = image || this.baseImage;
 
     try {
@@ -146,8 +144,6 @@ class SpriteOrchestrator extends EventEmitter {
           config: {
             image: spriteImage,
             env: {
-              REPO: repo || '',
-              BRANCH: branch,
               PERSISTENT: 'true',
               OPEN_DISPATCH_URL: this.openDispatchUrl,
               GH_TOKEN: process.env.GH_TOKEN || '',
@@ -172,7 +168,7 @@ class SpriteOrchestrator extends EventEmitter {
       }
 
       const machineInfo = await response.json();
-      this.emit('sprite:persistent:started', { machineInfo, repo, branch });
+      this.emit('sprite:persistent:started', { machineInfo });
       return machineInfo;
     } catch (error) {
       this.emit('sprite:error', { error });

@@ -101,9 +101,7 @@ describe('Sprite Integration', () => {
     // 2. Send task (this creates a Job and spawns a Machine)
     const chatMessages = [];
     const sendPromise = manager.sendToInstance('integration-test', 'run the tests', {
-      onMessage: async (text) => { chatMessages.push(text); },
-      repo: 'owner/repo',
-      branch: 'main'
+      onMessage: async (text) => { chatMessages.push(text); }
     });
 
     // 3. Give spawn a moment
@@ -170,8 +168,7 @@ describe('Sprite Integration', () => {
     await manager.startInstance('fail-test', 'owner/repo', 'C123');
 
     const sendPromise = manager.sendToInstance('fail-test', 'run broken thing', {
-      onMessage: async () => {},
-      repo: 'owner/repo'
+      onMessage: async () => {}
     });
 
     await new Promise(r => setTimeout(r, 50));
@@ -196,8 +193,7 @@ describe('Sprite Integration', () => {
     await manager.startInstance('auth-test', 'owner/repo', 'C123');
 
     const sendPromise = manager.sendToInstance('auth-test', 'task', {
-      onMessage: async () => {},
-      repo: 'owner/repo'
+      onMessage: async () => {}
     });
 
     await new Promise(r => setTimeout(r, 50));
@@ -222,8 +218,7 @@ describe('Sprite Integration', () => {
 
     // Start a job (don't await — we just want it in the map)
     const sendPromise = manager.sendToInstance('health-test', 'task', {
-      onMessage: async () => {},
-      repo: 'owner/repo'
+      onMessage: async () => {}
     });
 
     await new Promise(r => setTimeout(r, 50));
@@ -257,13 +252,11 @@ describe('Sprite Integration', () => {
     const messagesB = [];
 
     const promiseA = manager.sendToInstance('job-a', 'task A', {
-      onMessage: async (text) => { messagesA.push(text); },
-      repo: 'owner/repo-a'
+      onMessage: async (text) => { messagesA.push(text); }
     });
 
     const promiseB = manager.sendToInstance('job-b', 'task B', {
-      onMessage: async (text) => { messagesB.push(text); },
-      repo: 'owner/repo-b'
+      onMessage: async (text) => { messagesB.push(text); }
     });
 
     await new Promise(r => setTimeout(r, 50));

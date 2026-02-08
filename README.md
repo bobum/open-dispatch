@@ -55,18 +55,13 @@ KEY COMMANDS - SPRITE MODE (container on Fly.io):
 - npm run start:sprite           → Any provider (set CHAT_PROVIDER=slack|teams|discord)
 - fly deploy                     → Deploy to Fly.io
 
-SLASH COMMANDS (in chat):
-LOCAL MODE:
-- /od-start <name> <path>  → Start local instance bound to channel
-- /od-stop <name>          → Stop instance
-- /od-list                 → List instances
-- /od-send <name> <msg>    → Send to specific instance
-
-SPRITE MODE:
-- /od-run [options] <task> → One-shot: spawn VM, run task, terminate
-  Options: --repo <url>, --branch <name>, --image <docker-image>
-- /od-start <name> --repo <url> --persistent → Persistent VM session
-- /od-jobs                 → List recent Sprite jobs
+SLASH COMMANDS (unified — same syntax in any mode):
+- /od-start [name] [--image <alias>] [path] → Start a conversation agent
+- /od-run [--image <alias>] <task>           → One-shot fire-and-forget task
+- /od-stop <name> | --all                    → Stop agent(s)
+- /od-list                                   → List active agents
+- /od-send <name> <msg>                      → Send to specific instance
+- /od-jobs                                   → List recent jobs (Sprite mode)
 
 OUTPUT FORMATTERS (Sprite mode only):
 - Formatters filter raw agent CLI output so only conversational text reaches chat
@@ -92,6 +87,7 @@ SPRITE MODE:
 SUCCESS CRITERIA:
 - Local: User can /od-start and send messages from phone
 - Sprites: User can /od-run a task and see streamed results in chat
+- Same commands work in both modes (no need to know which backend)
 ```
 
 ---
@@ -216,7 +212,7 @@ cp .env.example .env
 npm run start:opencode    # Slack + OpenCode (recommended)
 
 # 4. In Slack, start a session
-/od-start myproject /path/to/code
+/od-start myproject ~/projects/mycode
 
 # 5. Chat normally—AI responds in channel
 ```
@@ -407,10 +403,12 @@ npm run start:discord
 
 | Command | Description |
 |---------|-------------|
-| `/od-start` | Start an AI instance |
-| `/od-stop` | Stop an AI instance |
-| `/od-list` | List running instances |
-| `/od-send` | Send message to instance |
+| `/od-start` | Start an AI agent |
+| `/od-stop` | Stop an AI agent |
+| `/od-list` | List running agents |
+| `/od-send` | Send message to agent |
+| `/od-run` | Run a one-shot task |
+| `/od-jobs` | List recent jobs |
 
 > **Note:** Leave Request URL blank for all (Socket Mode handles it)
 
@@ -443,38 +441,35 @@ npm run start:opencode
 
 ```bash
 # In Slack:
-/invite @Open Dispatch          # Invite bot to channel
-/od-start myproject /path/to/code   # Start instance
-"What files are in this project?"   # Chat normally!
+/invite @Open Dispatch             # Invite bot to channel
+/od-start myproject ~/projects/api # Start instance (name + path)
+"What files are in this project?"  # Chat normally!
 ```
 
 ---
 
 ## 💻 Commands
 
-### Local Mode Commands
+Same commands, same syntax — works in both Local and Sprite mode.
 
 | Command | Example | Description |
 |---------|---------|-------------|
-| `/od-start` | `/od-start api ~/projects/api` | Start instance named "api" in that directory |
-| `/od-stop` | `/od-stop api` | Stop the "api" instance |
-| `/od-list` | `/od-list` | Show all running instances |
-| `/od-send` | `/od-send api add tests` | Send message to "api" from any channel |
+| `/od-start` | `/od-start` | Start agent with auto-generated name, default path |
+| `/od-start` | `/od-start mybot` | Start named agent in `$HOME` |
+| `/od-start` | `/od-start mybot ~/projects/api` | Named agent in specific directory |
+| `/od-start` | `/od-start --image custom-agent` | Auto-named agent with custom image (Sprite) |
+| `/od-run` | `/od-run "run the tests"` | One-shot fire-and-forget task |
+| `/od-run` | `/od-run --image my-agent:v1 "lint the code"` | One-shot with custom image |
+| `/od-stop` | `/od-stop mybot` | Stop a specific agent |
+| `/od-stop` | `/od-stop --all` | Stop all running agents |
+| `/od-list` | `/od-list` | List active agents |
+| `/od-send` | `/od-send mybot add tests` | Send message to specific agent |
+| `/od-jobs` | `/od-jobs` | List recent jobs (Sprite mode only) |
 
-### Sprite Mode Commands (Cloud VMs)
-
-| Command | Example | Description |
-|---------|---------|-------------|
-| `/od-run` | `/od-run --repo github.com/user/proj "run tests"` | One-shot job in fresh Sprite |
-| `/od-run` | `/od-run --image my-agent:v1 --repo ... "task"` | One-shot with custom image |
-| `/od-start` | `/od-start bot --repo github.com/user/proj --persistent` | Persistent Sprite session |
-| `/od-jobs` | `/od-jobs` | List recent Sprite jobs |
-
-**Sprite Options:**
-- `--repo <url>` - GitHub repository to clone
-- `--branch <name>` - Branch to checkout (default: main)
-- `--image <image>` - Docker image to use
-- `--persistent` - Keep Sprite alive for multiple messages
+**Options:**
+- `--image <alias>` — Docker image to use (Sprite mode uses it, Local mode ignores it)
+- `name` — Optional everywhere; auto-generates short unique ID if omitted
+- `path` — Optional in `/od-start`; defaults to `$HOME` (Local mode), ignored in Sprite mode
 
 ### Chat Messages
 
@@ -589,7 +584,7 @@ Fly.io Private Network (6PN / WireGuard mesh)
 ```
 
 **How Sprite execution works:**
-1. User runs `/od-run --repo owner/project "run the tests"` in chat
+1. User runs `/od-run "run the tests"` in chat
 2. Open Dispatch creates a Job with a unique ID and per-job auth token
 3. Sprite Orchestrator spawns a Fly Machine via the [Machines API](https://fly.io/docs/machines/api/)
 4. The Sprite's sidecar (`sprite-reporter`) clones the repo and runs the agent
@@ -895,7 +890,7 @@ docker build -t registry.fly.io/your-sprite-app/agent:latest .
 docker push registry.fly.io/your-sprite-app/agent:latest
 ```
 
-**That's it.** Run `/od-run --repo owner/project "run the tests"` in chat and watch output stream back in real-time.
+**That's it.** Run `/od-run "run the tests"` in chat and watch output stream back in real-time.
 
 ---
 
@@ -910,7 +905,7 @@ docker push registry.fly.io/your-sprite-app/agent:latest
 | `"Instance not found"` | Bot was restarted. Run `/od-start` again |
 | Slow responses | Normal — each message spawns a process. ~2-5 sec |
 | Teams webhook fails | Check ngrok is running and URL updated in Dev Portal |
-| `/od-run` says "requires Sprite backend" | You're in local mode. Use `/od-start` instead, or switch to Sprite mode |
+| `/od-run` doesn't stream output | In local mode, `/od-run` runs the task and returns the result when done |
 
 ### Sprite Mode
 
@@ -980,6 +975,7 @@ open-dispatch/
 │   │   └── opencode.js         # OpenCode CLI output → clean conversational text
 │   └── Dockerfile              # Sidecar image for COPY --from=
 ├── tests/
+│   ├── bot-engine.test.js      # Unified command parsing tests
 │   ├── chat-provider.test.js   # Provider architecture tests
 │   ├── job.test.js             # Job tracking tests
 │   ├── opencode-core.test.js   # Core logic tests

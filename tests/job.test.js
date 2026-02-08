@@ -11,8 +11,6 @@ describe('Job', () => {
 
   beforeEach(() => {
     job = new Job({
-      repo: 'owner/repo',
-      branch: 'main',
       command: 'claude -p "run tests"',
       channelId: 'C123',
       projectDir: 'owner/repo',
@@ -28,7 +26,7 @@ describe('Job', () => {
     });
 
     it('should use provided jobId', () => {
-      const custom = new Job({ jobId: 'custom-id', repo: 'r', command: 'c', channelId: 'ch' });
+      const custom = new Job({ jobId: 'custom-id', command: 'c', channelId: 'ch' });
       assert.strictEqual(custom.jobId, 'custom-id');
     });
 
@@ -37,16 +35,9 @@ describe('Job', () => {
     });
 
     it('should store all provided fields', () => {
-      assert.strictEqual(job.repo, 'owner/repo');
-      assert.strictEqual(job.branch, 'main');
       assert.strictEqual(job.command, 'claude -p "run tests"');
       assert.strictEqual(job.channelId, 'C123');
       assert.strictEqual(job.jobToken, 'test-token-abc');
-    });
-
-    it('should default branch to main', () => {
-      const j = new Job({ repo: 'r', command: 'c', channelId: 'ch' });
-      assert.strictEqual(j.branch, 'main');
     });
 
     it('should default timeoutMs to 600000', () => {
@@ -54,7 +45,7 @@ describe('Job', () => {
     });
 
     it('should accept custom timeoutMs', () => {
-      const j = new Job({ repo: 'r', command: 'c', channelId: 'ch', timeoutMs: 30000 });
+      const j = new Job({ command: 'c', channelId: 'ch', timeoutMs: 30000 });
       assert.strictEqual(j.timeoutMs, 30000);
     });
 
@@ -66,7 +57,7 @@ describe('Job', () => {
     it('should store callback references', () => {
       const onMsg = async () => {};
       const onDone = async () => {};
-      const j = new Job({ repo: 'r', command: 'c', channelId: 'ch', onMessage: onMsg, onComplete: onDone });
+      const j = new Job({ command: 'c', channelId: 'ch', onMessage: onMsg, onComplete: onDone });
       assert.strictEqual(j.onMessage, onMsg);
       assert.strictEqual(j.onComplete, onDone);
     });
@@ -217,7 +208,7 @@ describe('Job', () => {
     });
 
     it('should return true when activity exceeds timeout', () => {
-      job = new Job({ repo: 'r', command: 'c', channelId: 'ch', timeoutMs: 1 });
+      job = new Job({ command: 'c', channelId: 'ch', timeoutMs: 1 });
       job.start('m1');
       // Force lastActivityAt into the past
       job.lastActivityAt = new Date(Date.now() - 100);
@@ -225,7 +216,7 @@ describe('Job', () => {
     });
 
     it('should reset timeout on addLog', () => {
-      job = new Job({ repo: 'r', command: 'c', channelId: 'ch', timeoutMs: 50 });
+      job = new Job({ command: 'c', channelId: 'ch', timeoutMs: 50 });
       job.start('m1');
       job.lastActivityAt = new Date(Date.now() - 100);
       assert.strictEqual(job.isTimedOut(), true);
@@ -255,7 +246,6 @@ describe('Job', () => {
       job.addArtifact({ name: 'PR', url: 'http://example.com' });
       const summary = job.toSummary();
       assert.strictEqual(summary.jobId, job.jobId);
-      assert.strictEqual(summary.repo, 'owner/repo');
       assert.strictEqual(summary.status, JobStatus.RUNNING);
       assert.strictEqual(summary.artifactCount, 1);
       assert.strictEqual(summary.logCount, 1);
@@ -273,7 +263,6 @@ describe('Job', () => {
       const restored = Job.fromJSON(json);
 
       assert.strictEqual(restored.jobId, job.jobId);
-      assert.strictEqual(restored.repo, job.repo);
       assert.strictEqual(restored.status, JobStatus.COMPLETED);
       assert.strictEqual(restored.exitCode, 0);
       assert.strictEqual(restored.logs.length, 1);
