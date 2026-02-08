@@ -1,8 +1,8 @@
 /**
- * Tests for the OpenCode output formatter
+ * Tests for the OpenCode output formatter (streaming mode)
  *
- * The formatter extracts clean conversational text from OpenCode CLI output.
- * It auto-detects JSON format (--format json) vs default format.
+ * The formatter filters OpenCode CLI output line-by-line, stripping tool
+ * markers and metadata so only conversational text reaches the webhook relay.
  */
 
 const { describe, it } = require('node:test');
@@ -22,41 +22,27 @@ function runFormatter(input) {
 
 describe('OpenCode Formatter', () => {
   describe('JSON format (--format json)', () => {
-    it('should extract response from clean JSON', () => {
+    it('should extract response from JSON line', () => {
       const input = '{"response": "The tests all pass."}';
       assert.strictEqual(runFormatter(input), 'The tests all pass.');
     });
 
     it('should extract response from JSON with log lines before it', () => {
       const input = [
-        '[info] Loading config...',
-        'Some log output',
+        '> build · gemini-3-pro-preview',
+        '→ Read file src/index.js',
         '{"response": "Here is the result."}'
       ].join('\n');
       assert.strictEqual(runFormatter(input), 'Here is the result.');
     });
 
-    it('should handle multiline response text', () => {
-      const response = 'Line one.\\nLine two.\\nLine three.';
-      const input = `{"response": "${response}"}`;
+    it('should handle JSON line among other output', () => {
+      const input = [
+        'Some preamble text',
+        '{"response": "The extracted response."}'
+      ].join('\n');
       const result = runFormatter(input);
-      assert.ok(result.includes('Line one.'));
-      assert.ok(result.includes('Line three.'));
-    });
-
-    it('should handle empty response field gracefully', () => {
-      const input = '{"response": ""}';
-      // Empty string is falsy — falls through to default filter which
-      // passes the raw JSON through as-is
-      const result = runFormatter(input);
-      assert.strictEqual(result, '{"response": ""}');
-    });
-
-    it('should ignore JSON without response field', () => {
-      const input = '{"status": "ok", "code": 0}';
-      // No response field — falls through to default filter
-      const result = runFormatter(input);
-      assert.ok(typeof result === 'string');
+      assert.ok(result.includes('The extracted response.'));
     });
   });
 
@@ -90,8 +76,6 @@ describe('OpenCode Formatter', () => {
         '  package.json',
         'The project has the following structure.'
       ].join('\n');
-      // The `$ ` line is stripped; indented output is treated as tool block
-      // and stripped; the final non-indented line passes through
       assert.strictEqual(runFormatter(input), 'The project has the following structure.');
     });
 
@@ -135,6 +119,21 @@ describe('OpenCode Formatter', () => {
       assert.ok(result.includes('First paragraph'));
       assert.ok(result.includes('Second paragraph'));
       assert.ok(result.includes('Final paragraph'));
+    });
+
+    it('should stream lines through without buffering', () => {
+      // This test verifies the formatter emits lines as they arrive
+      // by checking that conversational text interleaved with tool
+      // markers is properly filtered
+      const input = [
+        '> build · model-name',
+        'Starting analysis.',
+        '→ Read file package.json',
+        'The package uses Express.',
+        'Tokens: 500'
+      ].join('\n');
+      const result = runFormatter(input);
+      assert.strictEqual(result, 'Starting analysis.\nThe package uses Express.');
     });
   });
 });

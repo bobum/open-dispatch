@@ -1,19 +1,18 @@
 #!/usr/bin/env node
 /**
- * OpenCode Output Formatter
+ * OpenCode Output Formatter (Streaming)
  *
- * Transforms OpenCode CLI output into clean conversational text suitable
- * for chat delivery. Auto-detects the input format:
+ * Filters OpenCode CLI output line-by-line in real time, stripping tool-call
+ * markers, model headers, and metadata so only conversational prose reaches
+ * the downstream webhook relay.
  *
- *   --format json  →  Parses {"response": "..."} and outputs the text
- *   default format →  Strips tool-call markers, keeps agent prose
+ * Operates in streaming mode — lines are emitted as they arrive so the
+ * output-relay.js can report progress. If a line looks like OpenCode's
+ * --format json output ({"response": "..."}), the response text is extracted
+ * and emitted instead.
  *
  * Usage:
- *   # Recommended: use OpenCode's JSON format for reliable extraction
- *   opencode run --format json -- "task" | node formatters/opencode.js
- *
- *   # Also works with default format (best-effort heuristic filtering)
- *   opencode run -- "task" | node formatters/opencode.js
+ *   opencode run -- "task" | node formatters/opencode.js | node output-relay.js
  *
  * Enable by setting OUTPUT_FORMATTER=opencode in your Sprite environment.
  */
@@ -22,7 +21,8 @@
 
 const { createInterface } = require('readline');
 
-const lines = [];
+let inToolBlock = false;
+let seenContent = false;
 
 const rl = createInterface({
   input: process.stdin,
@@ -30,100 +30,50 @@ const rl = createInterface({
 });
 
 rl.on('line', (line) => {
-  lines.push(line);
-});
-
-rl.on('close', () => {
-  const text = lines.join('\n').trim();
-  if (!text) process.exit(0);
-
-  // Try JSON format first, fall back to default format filtering
-  const response = extractJsonResponse(text) || filterDefaultFormat(text);
-  if (response) {
-    process.stdout.write(response + '\n');
-  }
-});
-
-/**
- * Extract the response text from OpenCode's --format json output.
- * Returns null if the input is not valid OpenCode JSON.
- */
-function extractJsonResponse(text) {
-  // OpenCode wraps the final response as: {"response": "..."}
-  // Try parsing the whole output first
-  try {
-    const parsed = JSON.parse(text);
-    if (parsed.response) return parsed.response;
-  } catch {
-    // Not pure JSON — may have log lines before the JSON object
-  }
-
-  // Try to find the last JSON object in the output
-  const lastBrace = text.lastIndexOf('\n{');
-  if (lastBrace >= 0) {
+  // Try JSON extraction: {"response": "..."}
+  if (line.trim().startsWith('{')) {
     try {
-      const parsed = JSON.parse(text.slice(lastBrace + 1));
-      if (parsed.response) return parsed.response;
+      const parsed = JSON.parse(line.trim());
+      if (parsed.response) {
+        process.stdout.write(parsed.response + '\n');
+        return;
+      }
     } catch {
-      // Not JSON
+      // Not JSON — fall through to heuristic filter
     }
   }
 
-  return null;
-}
+  const trimmed = line.trim();
 
-/**
- * Filter OpenCode's default formatted output to extract just the
- * agent's conversational response. Strips tool-call markers, model
- * headers, and metadata lines.
- *
- * This is a best-effort heuristic — use --format json for reliable
- * extraction.
- */
-function filterDefaultFormat(text) {
-  const inputLines = text.split('\n');
-  const filtered = [];
-  let inToolBlock = false;
+  // Skip empty lines before any content
+  if (!seenContent && !trimmed) return;
 
-  for (const line of inputLines) {
-    const trimmed = line.trim();
+  // Skip model/build markers: "> build · gemini-3-pro-preview"
+  if (/^>\s+\w+\s+·\s+/.test(trimmed)) return;
 
-    // Skip empty lines at the start
-    if (filtered.length === 0 && !trimmed) continue;
+  // Skip tool call markers: "→ Read file", "→ Write file"
+  if (/^[→⟶➜]\s+/.test(trimmed)) return;
 
-    // Skip model/build markers: "> build · gemini-3-pro-preview"
-    if (/^>\s+\w+\s+·\s+/.test(trimmed)) continue;
-
-    // Skip tool call markers: "→ Read file", "→ Write file"
-    if (/^[→⟶➜]\s+/.test(trimmed)) continue;
-
-    // Skip shell commands: "$ ls -F"
-    if (/^\$\s+/.test(trimmed)) {
-      inToolBlock = true;
-      continue;
-    }
-
-    // End tool output block on next non-indented non-empty line
-    if (inToolBlock && trimmed && !line.startsWith(' ') && !line.startsWith('\t')) {
-      inToolBlock = false;
-    }
-    if (inToolBlock) continue;
-
-    // Skip internal log lines: "[workspace-setup] ..."
-    if (/^\[[\w-]+\]\s/.test(trimmed)) continue;
-
-    // Skip metadata lines
-    if (/^Tokens:\s/.test(trimmed)) continue;
-    if (/^Duration:\s/.test(trimmed)) continue;
-    if (/^Cost:\s/.test(trimmed)) continue;
-
-    filtered.push(line);
+  // Skip shell commands: "$ ls -F"
+  if (/^\$\s+/.test(trimmed)) {
+    inToolBlock = true;
+    return;
   }
 
-  // Trim trailing empty lines
-  while (filtered.length > 0 && !filtered[filtered.length - 1].trim()) {
-    filtered.pop();
+  // End tool output block on next non-indented non-empty line
+  if (inToolBlock && trimmed && !line.startsWith(' ') && !line.startsWith('\t')) {
+    inToolBlock = false;
   }
+  if (inToolBlock) return;
 
-  return filtered.join('\n').trim();
-}
+  // Skip internal log lines: "[workspace-setup] ..."
+  if (/^\[[\w-]+\]\s/.test(trimmed)) return;
+
+  // Skip metadata lines
+  if (/^Tokens:\s/.test(trimmed)) return;
+  if (/^Duration:\s/.test(trimmed)) return;
+  if (/^Cost:\s/.test(trimmed)) return;
+
+  seenContent = true;
+  process.stdout.write(line + '\n');
+});
