@@ -70,9 +70,11 @@ function createMockChatProvider() {
 function createMockLocalBackend() {
   const instances = new Map();
   const startCalls = [];
+  const sendCalls = [];
 
   return {
     startCalls,
+    sendCalls,
     startInstance(instanceId, projectDir, channelId, opts = {}) {
       startCalls.push({ instanceId, projectDir, channelId, opts });
       if (instances.has(instanceId)) {
@@ -106,6 +108,7 @@ function createMockLocalBackend() {
       const inst = instances.get(instanceId);
       if (!inst) return { success: false, error: 'not found' };
       inst.messageCount++;
+      sendCalls.push({ instanceId, message, options });
       return { success: true, responses: ['done'], exitCode: 0 };
     }
   };
@@ -184,11 +187,11 @@ describe('Bot Engine — Unified Commands', () => {
       assert.strictEqual(call.projectDir, '/home/user/project');
     });
 
-    it('should handle path that starts with ~', async () => {
+    it('should expand ~ in path to homedir', async () => {
       await chatProvider.simulateCommand('start', '~/project');
       const call = aiBackend.startCalls[0];
       assert.ok(call.instanceId.startsWith('agent-'));
-      assert.strictEqual(call.projectDir, '~/project');
+      assert.strictEqual(call.projectDir, require('path').join(os.homedir(), 'project'));
     });
 
     it('should handle relative path . as path not name', async () => {
@@ -224,6 +227,12 @@ describe('Bot Engine — Unified Commands', () => {
       assert.ok(chatProvider.sent.some(m => m.text && m.text.includes('Missing value for --image')));
       assert.strictEqual(aiBackend.startCalls.length, 0);
     });
+
+    it('should error on unterminated quote', async () => {
+      await chatProvider.simulateCommand('start', '"mybot');
+      assert.ok(chatProvider.sent.some(m => m.text && m.text.includes('Unterminated quote')));
+      assert.strictEqual(aiBackend.startCalls.length, 0);
+    });
   });
 
   describe('handleRun', () => {
@@ -256,8 +265,11 @@ describe('Bot Engine — Unified Commands', () => {
     it('should not extract --image from inside quoted task', async () => {
       await chatProvider.simulateCommand('run', '"document --image foo behavior"');
       assert.strictEqual(aiBackend.startCalls.length, 1);
-      // The task should be the full quoted string, --image NOT extracted as a flag
-      // (sendToInstance receives the task text)
+      // --image should NOT be extracted as a flag
+      assert.deepStrictEqual(aiBackend.startCalls[0].opts, {});
+      // sendToInstance should receive the full quoted string as the task
+      assert.strictEqual(aiBackend.sendCalls.length, 1);
+      assert.strictEqual(aiBackend.sendCalls[0].message, 'document --image foo behavior');
     });
 
     it('should error when --image has no value', async () => {
@@ -321,6 +333,18 @@ describe('Bot Engine — Unified Commands', () => {
 
     it('should handle empty input', () => {
       assert.deepStrictEqual(_test.tokenize(''), []);
+    });
+
+    it('should return error for unterminated double quote', () => {
+      const result = _test.tokenize('"do thing');
+      assert.ok(result.error);
+      assert.ok(result.error.includes('Unterminated quote'));
+    });
+
+    it('should return error for unterminated single quote', () => {
+      const result = _test.tokenize("'do thing");
+      assert.ok(result.error);
+      assert.ok(result.error.includes('Unterminated quote'));
     });
   });
 

@@ -6,6 +6,7 @@
  */
 
 const os = require('os');
+const path = require('path');
 const { randomBytes } = require('crypto');
 
 /**
@@ -47,6 +48,9 @@ function tokenize(input) {
     } else {
       current += ch;
     }
+  }
+  if (inQuote !== null) {
+    return { error: `Unterminated quote: missing closing ${inQuote}` };
   }
   if (current) tokens.push(current);
   return tokens;
@@ -188,7 +192,13 @@ function createBotEngine(options) {
     }
 
     const instanceId = parsed.name || generateName();
-    const projectDir = parsed.path || os.homedir();
+    let projectDir = parsed.path || os.homedir();
+    // Expand leading ~ to home directory (Node's cwd doesn't handle ~)
+    if (projectDir.startsWith('~/')) {
+      projectDir = path.join(os.homedir(), projectDir.slice(2));
+    } else if (projectDir === '~') {
+      projectDir = os.homedir();
+    }
     const opts = {};
     if (parsed.image) opts.image = parsed.image;
 
@@ -238,6 +248,7 @@ function createBotEngine(options) {
   function parseStartArgs(args) {
     const result = { name: null, image: null, path: null, error: null };
     const tokens = tokenize(args);
+    if (tokens.error) { result.error = tokens.error; return result; }
     if (tokens.length === 0) return result;
 
     // Extract --image <value> from token list
@@ -339,7 +350,7 @@ function createBotEngine(options) {
       if (chatProvider.supportsCards) {
         await chatProvider.sendCard(ctx.channelId, {
           title: 'No Running Instances',
-          description: `Use \`${commandPrefix}-start [name] [path]\` to start a new instance.`
+          description: `Use \`${commandPrefix}-start [name] [--image <alias>] [path]\` to start a new instance.`
         });
       } else {
         await ctx.reply('No instances running.');
@@ -452,16 +463,19 @@ function createBotEngine(options) {
       batcher.push(text);
     };
 
-    // Execute the job
-    const result = await aiBackend.sendToInstance(instanceId, parsed.task, {
-      onMessage,
-      image: parsed.image
-    });
-
-    // Flush remaining output and clean up
-    await batcher.flush();
-    batcher.destroy();
-    aiBackend.stopInstance(instanceId);
+    let result;
+    try {
+      // Execute the job
+      result = await aiBackend.sendToInstance(instanceId, parsed.task, {
+        onMessage,
+        image: parsed.image
+      });
+    } finally {
+      // Always clean up batcher and temp instance, even on error
+      await batcher.flush();
+      batcher.destroy();
+      aiBackend.stopInstance(instanceId);
+    }
 
     // Send final status
     if (result.success) {
@@ -516,6 +530,7 @@ function createBotEngine(options) {
   function parseRunArgs(args) {
     const result = { image: null, task: null, error: null };
     const tokens = tokenize(args);
+    if (tokens.error) { result.error = tokens.error; return result; }
     if (tokens.length === 0) return result;
 
     // Extract --image <value> from token list
