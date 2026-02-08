@@ -205,8 +205,7 @@ describe('Sprite Instance Manager', () => {
 
       // Simulate: after spawn, the webhook fires status=completed
       const sendPromise = manager.sendToInstance('test', 'run tests', {
-        onMessage: async () => {},
-        repo: 'owner/repo'
+        onMessage: async () => {}
       });
 
       // Give the spawn a moment to run
@@ -234,7 +233,6 @@ describe('Sprite Instance Manager', () => {
 
       const result = await manager.sendToInstance('timeout-test', 'slow task', {
         onMessage: async () => {},
-        repo: 'owner/repo',
         timeoutMs: 200 // short timeout for fast test
       });
 
@@ -267,7 +265,7 @@ describe('Sprite Instance Manager', () => {
       const jobs = manager.listJobs();
       const job = manager.getJob(jobs[0].jobId);
       assert.ok(job);
-      assert.strictEqual(job.repo, 'owner/repo');
+      assert.strictEqual(job.projectDir, 'owner/repo');
     });
   });
 
@@ -355,7 +353,6 @@ describe('Sprite Orchestrator (mocked)', () => {
 
       const { Job } = require('../src/job');
       const job = new Job({
-        repo: 'owner/repo',
         command: 'claude -p "test"',
         channelId: 'C123',
         jobToken: 'test-job-token'
@@ -366,8 +363,8 @@ describe('Sprite Orchestrator (mocked)', () => {
       assert.ok(capturedUrl.includes('/apps/test-app/machines'));
       assert.strictEqual(capturedBody.config.auto_destroy, true);
       assert.strictEqual(capturedBody.config.env.JOB_ID, job.jobId);
-      assert.strictEqual(capturedBody.config.env.REPO, 'owner/repo');
       assert.strictEqual(capturedBody.config.env.COMMAND, 'claude -p "test"');
+      assert.strictEqual(capturedBody.config.env.REPO, undefined);
       assert.strictEqual(job.status, JobStatus.RUNNING);
       assert.strictEqual(job.machineId, 'machine-abc');
     });
@@ -384,7 +381,7 @@ describe('Sprite Orchestrator (mocked)', () => {
       });
 
       const { Job } = require('../src/job');
-      const job = new Job({ repo: 'r', command: 'c', channelId: 'ch' });
+      const job = new Job({ command: 'c', channelId: 'ch' });
 
       await assert.rejects(
         () => orch.spawnJob(job),

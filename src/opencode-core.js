@@ -23,7 +23,7 @@ function createInstanceManager(options = {}) {
   /**
    * Start a new OpenCode instance
    */
-  function startInstance(instanceId, projectDir, channel) {
+  function startInstance(instanceId, projectDir, channel, opts = {}) {
     if (instances.has(instanceId)) {
       return { success: false, error: `Instance "${instanceId}" already running` };
     }

@@ -53,7 +53,7 @@ function createInstanceManager(options = {}) {
     }
 
     const sessionId = randomUUID();
-    const { persistent = false, image, branch = 'main' } = opts;
+    const { persistent = false, image } = opts;
 
     const instance = {
       sessionId,
@@ -64,8 +64,7 @@ function createInstanceManager(options = {}) {
       currentJob: null,
       persistent,
       spriteId: null,
-      image,
-      branch
+      image
     };
 
     instances.set(instanceId, instance);
@@ -73,8 +72,6 @@ function createInstanceManager(options = {}) {
     if (persistent) {
       try {
         const machineInfo = await orchestrator.spawnPersistent({
-          repo: projectDir,
-          branch,
           image
         });
         instance.spriteId = machineInfo.id;
@@ -158,7 +155,7 @@ function createInstanceManager(options = {}) {
       return { success: false, error: `Instance "${instanceId}" not found` };
     }
 
-    const { onMessage, repo, branch = 'main', image, timeoutMs } = options;
+    const { onMessage, image, timeoutMs } = options;
     instance.messageCount++;
 
     const agentCommand = buildAgentCommand(message, instance.sessionId, agentType);
@@ -169,13 +166,11 @@ function createInstanceManager(options = {}) {
     }
 
     // One-shot: spawn Machine, wait for webhook callback
-    return sendToNewSprite(instance, agentCommand, { onMessage, repo, branch, image, timeoutMs });
+    return sendToNewSprite(instance, agentCommand, { onMessage, image, timeoutMs });
   }
 
   async function sendToPersistentSprite(instance, command, onMessage) {
     const job = new Job({
-      repo: instance.projectDir,
-      branch: instance.branch,
       command,
       channelId: instance.channelId,
       projectDir: instance.projectDir,
@@ -232,13 +227,11 @@ function createInstanceManager(options = {}) {
    * The Promise resolves when /webhooks/status fires with completed/failed.
    */
   async function sendToNewSprite(instance, agentCommand, options) {
-    const { onMessage, repo, branch = 'main', image, timeoutMs = 600000 } = options;
+    const { onMessage, image, timeoutMs = 600000 } = options;
 
     const jobToken = orchestrator.generateJobToken(randomUUID());
 
     const job = new Job({
-      repo: repo || instance.projectDir || '',
-      branch,
       command: agentCommand,
       channelId: instance.channelId,
       projectDir: instance.projectDir,

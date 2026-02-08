@@ -18,8 +18,6 @@ class Job {
   /**
    * @param {Object} params
    * @param {string} [params.jobId] - Auto-generated if not provided
-   * @param {string} params.repo - GitHub repository (owner/repo)
-   * @param {string} [params.branch] - Branch name (default: main)
    * @param {string} params.command - Agent command to execute
    * @param {string} params.channelId - Chat channel ID (provider-agnostic)
    * @param {string} [params.projectDir] - Project directory path
@@ -30,10 +28,8 @@ class Job {
    * @param {Function} [params.onComplete] - Callback when job finishes: (job) => Promise<void>
    * @param {number} [params.timeoutMs] - Max job runtime in ms (default: 600000 / 10 min)
    */
-  constructor({ jobId, repo, branch, command, channelId, projectDir, userId, image, jobToken, onMessage, onComplete, timeoutMs }) {
+  constructor({ jobId, command, channelId, projectDir, userId, image, jobToken, onMessage, onComplete, timeoutMs }) {
     this.jobId = jobId || randomUUID();
-    this.repo = repo;
-    this.branch = branch || 'main';
     this.command = command;
     this.channelId = channelId;
     this.projectDir = projectDir || null;
@@ -136,8 +132,6 @@ class Job {
   toSummary() {
     return {
       jobId: this.jobId,
-      repo: this.repo,
-      branch: this.branch,
       status: this.status,
       duration: this.getDuration(),
       artifactCount: this.artifacts.length,
@@ -152,8 +146,6 @@ class Job {
   toJSON() {
     return {
       jobId: this.jobId,
-      repo: this.repo,
-      branch: this.branch,
       command: this.command,
       channelId: this.channelId,
       projectDir: this.projectDir,
@@ -177,8 +169,6 @@ class Job {
   static fromJSON(json) {
     const job = new Job({
       jobId: json.jobId,
-      repo: json.repo,
-      branch: json.branch,
       command: json.command,
       channelId: json.channelId,
       projectDir: json.projectDir,

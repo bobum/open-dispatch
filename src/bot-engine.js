@@ -5,6 +5,9 @@
  * Handles command parsing, instance routing, and response formatting.
  */
 
+const os = require('os');
+const { randomBytes } = require('crypto');
+
 /**
  * @typedef {Object} BotEngineOptions
  * @property {import('./providers/chat-provider').ChatProvider} chatProvider - Chat platform provider
@@ -111,41 +114,48 @@ function createBotEngine(options) {
   // ============================================
 
   /**
+   * Generate a short unique name for auto-named agents.
+   * @returns {string} e.g. "agent-7k3f"
+   */
+  function generateName() {
+    return 'agent-' + randomBytes(2).toString('hex');
+  }
+
+  /**
    * Handle the 'start' command
+   * Usage: /od-start [name] [--image alias] [path]
    */
   async function handleStart(ctx, args) {
-    const parts = args.trim().split(/\s+/);
+    const parsed = parseStartArgs(args);
+    const instanceId = parsed.name || generateName();
+    const projectDir = parsed.path || os.homedir();
+    const opts = {};
+    if (parsed.image) opts.image = parsed.image;
 
-    if (parts.length < 2) {
-      await ctx.reply(
-        `Usage: \`${commandPrefix}-start <instance-name> <project-directory>\``
-      );
-      return;
-    }
-
-    const [instanceId, ...pathParts] = parts;
-    const projectDir = pathParts.join(' ');
-
-    const result = await aiBackend.startInstance(instanceId, projectDir, ctx.channelId);
+    const result = await aiBackend.startInstance(instanceId, projectDir, ctx.channelId, opts);
 
     if (result.success) {
       if (chatProvider.supportsCards) {
+        const fields = [
+          { name: 'Instance', value: instanceId, inline: true },
+          { name: 'Project', value: projectDir, inline: true },
+          { name: 'Session', value: result.sessionId.substring(0, 8) + '...', inline: true }
+        ];
+        if (parsed.image) {
+          fields.push({ name: 'Image', value: parsed.image, inline: true });
+        }
         await chatProvider.sendCard(ctx.channelId, {
           title: `${aiName} Instance Started`,
           color: '#00ff00',
-          fields: [
-            { name: 'Instance', value: instanceId, inline: true },
-            { name: 'Project', value: projectDir, inline: true },
-            { name: 'Session', value: result.sessionId.substring(0, 8) + '...', inline: true }
-          ],
+          fields,
           footer: `Messages in this channel will be sent to ${aiName}.`
         });
       } else {
-        await ctx.reply(
-          `Started instance **${instanceId}** in \`${projectDir}\`\n` +
-          `Session: \`${result.sessionId}\`\n\n` +
-          `Messages in this channel will be sent to ${aiName}.`
-        );
+        let msg = `Started instance **${instanceId}** in \`${projectDir}\`\n` +
+          `Session: \`${result.sessionId}\``;
+        if (parsed.image) msg += `\nImage: ${parsed.image}`;
+        msg += `\n\nMessages in this channel will be sent to ${aiName}.`;
+        await ctx.reply(msg);
       }
     } else {
       if (chatProvider.supportsCards) {
@@ -161,13 +171,76 @@ function createBotEngine(options) {
   }
 
   /**
+   * Parse /od-start arguments
+   * @param {string} args - Raw argument string
+   * @returns {Object} Parsed { name, image, path }
+   */
+  function parseStartArgs(args) {
+    const result = { name: null, image: null, path: null };
+    let remaining = args.trim();
+    if (!remaining) return result;
+
+    // Extract --image value
+    const imageMatch = remaining.match(/--image\s+(\S+)/);
+    if (imageMatch) {
+      result.image = imageMatch[1];
+      remaining = remaining.replace(/--image\s+\S+/, '').trim();
+    }
+
+    if (!remaining) return result;
+
+    // Remaining tokens: [name] [path]
+    // Path starts with / or ~ or is a known home dir pattern
+    const tokens = remaining.split(/\s+/);
+    if (tokens.length === 0) return result;
+
+    // If first token looks like a path, it's the path (no name given)
+    if (tokens[0].startsWith('/') || tokens[0].startsWith('~')) {
+      result.path = tokens.join(' ');
+    } else {
+      result.name = tokens[0];
+      if (tokens.length > 1) {
+        result.path = tokens.slice(1).join(' ');
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Handle the 'stop' command
+   * Usage: /od-stop <name> | --all
    */
   async function handleStop(ctx, args) {
-    const instanceId = args.trim();
+    const trimmed = args.trim();
+
+    if (trimmed === '--all') {
+      const instances = aiBackend.listInstances();
+      if (instances.length === 0) {
+        await ctx.reply('No instances running.');
+        return;
+      }
+      const stopped = [];
+      for (const inst of instances) {
+        const r = aiBackend.stopInstance(inst.instanceId);
+        if (r.success) stopped.push(inst.instanceId);
+      }
+      if (chatProvider.supportsCards) {
+        await chatProvider.sendCard(ctx.channelId, {
+          title: `${aiName} — Stopped All`,
+          color: '#ff9900',
+          description: `Stopped ${stopped.length} instance(s): ${stopped.join(', ')}`
+        });
+      } else {
+        await ctx.reply(`Stopped ${stopped.length} instance(s): ${stopped.join(', ')}`);
+      }
+      return;
+    }
+
+    const instanceId = trimmed;
 
     if (!instanceId) {
-      await ctx.reply(`Usage: \`${commandPrefix}-stop <instance-name>\``);
+      await ctx.reply(`Usage: \`${commandPrefix}-stop <name>\` or \`${commandPrefix}-stop --all\``);
       return;
     }
 
@@ -206,7 +279,7 @@ function createBotEngine(options) {
       if (chatProvider.supportsCards) {
         await chatProvider.sendCard(ctx.channelId, {
           title: 'No Running Instances',
-          description: `Use \`${commandPrefix}-start <name> <project-path>\` to start a new instance.`
+          description: `Use \`${commandPrefix}-start [name] [path]\` to start a new instance.`
         });
       } else {
         await ctx.reply('No instances running.');
@@ -258,35 +331,26 @@ function createBotEngine(options) {
   }
 
   /**
-   * Handle the 'run' command (one-shot Sprite execution)
-   * Usage: /od-run [--image <image>] [--repo <repo>] [--branch <branch>] <task>
+   * Handle the 'run' command (one-shot fire-and-forget)
+   * Usage: /od-run [--image <image>] <task>
    */
   async function handleRun(ctx, args) {
-    // Check if backend supports run (has jobs - sprite-core)
-    if (!aiBackend.jobs) {
-      await ctx.reply(
-        `The \`${commandPrefix}-run\` command requires Sprite backend.\n` +
-        `Current backend doesn't support one-shot job execution.`
-      );
-      return;
-    }
-
     // Parse options and task from args
     const parsed = parseRunArgs(args);
 
     if (!parsed.task) {
       await ctx.reply(
-        `Usage: \`${commandPrefix}-run [--image <image>] [--repo <repo>] [--branch <branch>] <task>\`\n\n` +
+        `Usage: \`${commandPrefix}-run [--image <image>] <task>\`\n\n` +
         `**Examples:**\n` +
-        `\`${commandPrefix}-run --repo github.com/user/project "run the tests"\`\n` +
-        `\`${commandPrefix}-run --image my-agent:v1 --repo github.com/user/project "lint the code"\``
+        `\`${commandPrefix}-run "run the tests"\`\n` +
+        `\`${commandPrefix}-run --image my-agent:v1 "lint the code"\``
       );
       return;
     }
 
     // Create a temporary instance for this job
-    const instanceId = `run-${Date.now()}`;
-    const projectDir = parsed.repo || '';
+    const instanceId = generateName();
+    const projectDir = os.homedir();
 
     const startResult = await aiBackend.startInstance(instanceId, projectDir, ctx.channelId);
     if (!startResult.success) {
@@ -301,16 +365,12 @@ function createBotEngine(options) {
         color: '#0099ff',
         fields: [
           { name: 'Task', value: parsed.task, inline: false },
-          parsed.repo && { name: 'Repo', value: parsed.repo, inline: true },
-          parsed.branch && { name: 'Branch', value: parsed.branch, inline: true },
           parsed.image && { name: 'Image', value: parsed.image, inline: true }
         ].filter(Boolean),
         footer: 'Streaming logs as they arrive...'
       });
     } else {
       let msg = `**Job Started**\nTask: ${parsed.task}`;
-      if (parsed.repo) msg += `\nRepo: ${parsed.repo}`;
-      if (parsed.branch) msg += `\nBranch: ${parsed.branch}`;
       if (parsed.image) msg += `\nImage: ${parsed.image}`;
       await ctx.reply(msg);
     }
@@ -327,8 +387,6 @@ function createBotEngine(options) {
     // Execute the job
     const result = await aiBackend.sendToInstance(instanceId, parsed.task, {
       onMessage,
-      repo: parsed.repo,
-      branch: parsed.branch,
       image: parsed.image
     });
 
@@ -384,33 +442,18 @@ function createBotEngine(options) {
   /**
    * Parse /od-run arguments
    * @param {string} args - Raw argument string
-   * @returns {Object} Parsed options { image, repo, branch, task }
+   * @returns {Object} Parsed options { image, task }
    */
   function parseRunArgs(args) {
-    const result = { image: null, repo: null, branch: null, task: null };
+    const result = { image: null, task: null };
     let remaining = args.trim();
 
-    // Extract --option value pairs
-    const optionRegex = /--(\w+)\s+(\S+)/g;
-    let match;
-
-    while ((match = optionRegex.exec(remaining)) !== null) {
-      const [fullMatch, option, value] = match;
-      switch (option.toLowerCase()) {
-        case 'image':
-          result.image = value;
-          break;
-        case 'repo':
-          result.repo = value;
-          break;
-        case 'branch':
-          result.branch = value;
-          break;
-      }
+    // Extract --image value
+    const imageMatch = remaining.match(/--image\s+(\S+)/);
+    if (imageMatch) {
+      result.image = imageMatch[1];
+      remaining = remaining.replace(/--image\s+\S+/, '').trim();
     }
-
-    // Remove all --option value pairs to get the task
-    remaining = remaining.replace(/--\w+\s+\S+/g, '').trim();
 
     // Task can be quoted or unquoted
     if (remaining.startsWith('"') && remaining.endsWith('"')) {
@@ -418,7 +461,7 @@ function createBotEngine(options) {
     } else if (remaining.startsWith("'") && remaining.endsWith("'")) {
       result.task = remaining.slice(1, -1);
     } else {
-      result.task = remaining;
+      result.task = remaining || null;
     }
 
     return result;
@@ -450,7 +493,7 @@ function createBotEngine(options) {
     if (chatProvider.supportsCards) {
       const fields = jobs.slice(-10).map((job) => ({
         name: `${job.jobId.substring(0, 8)}... (${job.status})`,
-        value: `${job.repo || 'N/A'}\n${job.artifactCount} artifacts`,
+        value: `${job.artifactCount} artifacts`,
         inline: false
       }));
 
@@ -461,7 +504,7 @@ function createBotEngine(options) {
       });
     } else {
       const lines = jobs.slice(-10).map((job) =>
-        `- **${job.jobId.substring(0, 8)}...** [${job.status}] - ${job.repo || 'N/A'}`
+        `- **${job.jobId.substring(0, 8)}...** [${job.status}]`
       );
       await ctx.reply(`**Recent Jobs:**\n${lines.join('\n')}`);
     }
@@ -603,11 +646,11 @@ function createBotEngine(options) {
         await ctx.reply(
           `Unknown command: ${command}\n\n` +
           `**Available commands:**\n` +
-          `- \`${commandPrefix}-start <name> <path>\` - Start an instance\n` +
-          `- \`${commandPrefix}-stop <name>\` - Stop an instance\n` +
-          `- \`${commandPrefix}-list\` - List instances\n` +
+          `- \`${commandPrefix}-start [name] [--image <alias>] [path]\` - Start a conversation\n` +
+          `- \`${commandPrefix}-run [--image <alias>] <task>\` - Run a one-shot task\n` +
+          `- \`${commandPrefix}-stop <name> | --all\` - Stop agent(s)\n` +
+          `- \`${commandPrefix}-list\` - List active agents\n` +
           `- \`${commandPrefix}-send <name> <message>\` - Send to instance\n` +
-          `- \`${commandPrefix}-run [options] <task>\` - Run one-shot job in Sprite\n` +
           `- \`${commandPrefix}-jobs\` - List recent jobs`
         );
     }
@@ -695,4 +738,4 @@ function createBotEngine(options) {
   };
 }
 
-module.exports = { createBotEngine };
+module.exports = { createBotEngine, _test: { generateName: () => 'agent-' + randomBytes(2).toString('hex') } };
