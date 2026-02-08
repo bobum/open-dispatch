@@ -21,6 +21,9 @@
  *   Discord: DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID
  */
 
+const { registerFatalHandlers } = require('./process-handlers');
+registerFatalHandlers();
+
 require('dotenv').config();
 
 const { createProvider } = require('./providers');

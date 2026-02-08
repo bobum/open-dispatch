@@ -126,7 +126,7 @@ function createBotEngine(options) {
       if (flushTimer || destroyed) return;
       flushTimer = setTimeout(() => {
         flushTimer = null;
-        flush();
+        flush().catch(err => console.error('[bot-engine] Flush error:', err));
       }, FLUSH_DELAY);
     }
 
@@ -156,7 +156,7 @@ function createBotEngine(options) {
         buffer.push(text);
         if (buffer.length >= MAX_LINES) {
           if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-          flush();
+          flush().catch(err => console.error('[bot-engine] Flush error:', err));
         } else {
           scheduleFlush();
         }
@@ -408,6 +408,7 @@ function createBotEngine(options) {
   async function handleRun(ctx, args) {
     // Parse options and task from args
     const parsed = parseRunArgs(args);
+    parsed.image = resolveImageAlias(parsed.image);
 
     if (parsed.error) {
       await ctx.reply(parsed.error);
@@ -520,6 +521,26 @@ function createBotEngine(options) {
       } else {
         await ctx.reply(`**Job Failed** (${result.jobId || 'N/A'})\nError: ${result.error}`);
       }
+    }
+  }
+
+  /**
+   * Resolve image aliases from SPRITE_IMAGES env var.
+   * If SPRITE_IMAGES is set (JSON map), look up the alias; if found, return
+   * the full URL. If not found (or env not set), return the original value.
+   * @param {string|null} image
+   * @returns {string|null}
+   */
+  function resolveImageAlias(image) {
+    if (!image) return image;
+    const spriteImages = process.env.SPRITE_IMAGES;
+    if (!spriteImages) return image;
+    try {
+      const aliases = JSON.parse(spriteImages);
+      if (typeof aliases !== 'object' || aliases === null) return image;
+      return aliases[image] ?? image;
+    } catch {
+      return image;
     }
   }
 
